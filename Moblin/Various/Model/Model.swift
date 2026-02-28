@@ -1373,6 +1373,8 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
         case .full:
             disableScreenPreview()
         case let .service(keepChatRunning, keepBatteryLevelRunning):
+            storeSettings()
+            replaysStorage.store()
             disableScreenPreview()
             stopPeriodicTimers(keepChatRunning: keepChatRunning,
                                keepBatteryLevelRunning: keepBatteryLevelRunning)
@@ -1527,8 +1529,8 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
         if isLive || isRecording {
             return .off
         }
-        if database.catPrinters.backgroundPrinting || database.moblink.relay.enabled {
-            return .service(keepChatRunning: database.catPrinters.backgroundPrinting,
+        if database.chat.backgroundChat || database.moblink.relay.enabled {
+            return .service(keepChatRunning: database.chat.backgroundChat,
                             keepBatteryLevelRunning: database.moblink.relay.enabled)
         }
         return .off

@@ -40,13 +40,6 @@ struct CatPrintersSettingsView: View {
                 Text("A small affordable black and white printer.")
             }
             Section {
-                Toggle(isOn: $catPrinters.backgroundPrinting) {
-                    Text("Background printing")
-                }
-            } footer: {
-                Text("Print when the app is in background mode.")
-            }
-            Section {
                 List {
                     ForEach(catPrinters.devices) { device in
                         CatPrinterSettingsWrapperView(catPrinters: catPrinters,
@@ -67,6 +60,7 @@ struct CatPrintersSettingsView: View {
                 }
             } footer: {
                 SwipeLeftToDeleteHelpView(kind: String(localized: "a printer"))
+                Text("Printers will print when the app is in background mode if chat is kept active, see the corresponding chat setting.")
             }
         }
         .navigationTitle("Cat printers")
