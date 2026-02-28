@@ -60,6 +60,7 @@ struct CatPrintersSettingsView: View {
                 }
             } footer: {
                 SwipeLeftToDeleteHelpView(kind: String(localized: "a printer"))
+                Text("Printers will print when the app is in background mode if chat is kept active, see the corresponding chat setting.")
             }
         }
         .navigationTitle("Cat printers")
