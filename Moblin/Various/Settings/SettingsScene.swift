@@ -1723,6 +1723,7 @@ class SettingsWidgetChat: Codable, ObservableObject {
     @Published var platform: Bool = true
     let nicknames: SettingsChatNicknames = .init()
     @Published var displayStyle: SettingsChatDisplayStyle = .internationalNameAndUsername
+    @Published var showSharedChatSourceChannel: Bool = true
 
     enum CodingKeys: CodingKey {
         case id,
@@ -1737,7 +1738,8 @@ class SettingsWidgetChat: Codable, ObservableObject {
              boldMessage,
              badges,
              platform,
-             displayStyle
+             displayStyle,
+             showSharedChatSourceChannel
     }
 
     init() {}
@@ -1757,6 +1759,7 @@ class SettingsWidgetChat: Codable, ObservableObject {
         try container.encode(.badges, badges)
         try container.encode(.platform, platform)
         try container.encode(.displayStyle, displayStyle)
+        try container.encode(.showSharedChatSourceChannel, showSharedChatSourceChannel)
     }
 
     required init(from decoder: Decoder) throws {
@@ -1778,6 +1781,7 @@ class SettingsWidgetChat: Codable, ObservableObject {
         badges = container.decode(.badges, Bool.self, true)
         platform = container.decode(.platform, Bool.self, true)
         displayStyle = container.decode(.displayStyle, SettingsChatDisplayStyle.self, .internationalName)
+        showSharedChatSourceChannel = container.decode(.showSharedChatSourceChannel, Bool.self, true)
     }
 
     func update(other: SettingsWidgetChat) {
@@ -1797,6 +1801,7 @@ class SettingsWidgetChat: Codable, ObservableObject {
         badges = other.badges
         platform = other.platform
         displayStyle = other.displayStyle
+        showSharedChatSourceChannel = other.showSharedChatSourceChannel
     }
 }
 
