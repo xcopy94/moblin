@@ -27,6 +27,7 @@ extension Model {
             messageId: nil,
             displayName: nil,
             user: nil,
+            userId: nil,
             userColor: .init(red: 0, green: 0, blue: 0),
             userBadges: [],
             segments: [],
@@ -39,7 +40,8 @@ extension Model {
             live: true,
             filter: nil,
             platform: nil,
-            state: ChatPostState()
+            state: ChatPostState(),
+            sourceChannelIconUrl: nil
         )
     }
 
@@ -318,7 +320,8 @@ extension Model {
         isOwner: Bool,
         bits: String?,
         highlight: ChatHighlight?,
-        live: Bool
+        live: Bool,
+        sourceChannelIconUrl: URL? = nil
     ) {
         let filter = evaluateFilters(user: user, segments: segments)
         if database.chat.botEnabled, live, filter?.chatBot != false,
@@ -357,7 +360,8 @@ extension Model {
             live: live,
             filter: filter,
             platform: platform,
-            state: ChatPostState()
+            state: ChatPostState(),
+            sourceChannelIconUrl: sourceChannelIconUrl
         )
         chatPostId += 1
         if isTextToSpeechEnabledForMessage(post: post) {

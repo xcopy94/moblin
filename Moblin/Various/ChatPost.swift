@@ -184,6 +184,7 @@ struct ChatPost: Identifiable, Equatable {
     let filter: SettingsChatFilter?
     let platform: Platform?
     let state: ChatPostState
+    let sourceChannelIconUrl: URL?
 
     func text() -> String {
         return segments.filter { $0.text != nil }.map { $0.text! }.joined(separator: "").trim()
