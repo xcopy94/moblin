@@ -56,6 +56,10 @@ private struct ChatSettingsGeneralView: View {
                 .onChange(of: chat.showDeletedMessages) { _ in
                     model.reloadChatMessages()
                 }
+            Toggle("Show Shared Chat Source Channel", isOn: $chat.showSharedChatSourceChannel)
+                .onChange(of: chat.showSharedChatSourceChannel) { _ in
+                    model.reloadChatMessages()
+                }
         }
     }
 }
