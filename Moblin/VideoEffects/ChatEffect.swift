@@ -118,6 +118,15 @@ private struct LineView: View {
                     .padding(2)
                     .frame(height: frameHeightBadges())
             }
+            if let iconUrl = post.sourceChannelIconUrl, settings.showSharedChatSourceChannel {
+                CacheAsyncImage(url: iconUrl) { image in
+                    image.resizable().aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    EmptyView()
+                }
+                .padding(2)
+                .frame(height: frameHeightBadges())
+            }
             if settings.badges {
                 ForEach(post.userBadges, id: \.self) { url in
                     CacheAsyncImage(url: url) { image in
@@ -136,12 +145,6 @@ private struct LineView: View {
                 .lineLimit(1)
                 .padding([.trailing], 0)
                 .bold(settings.boldUsername)
-            if let sourceChannel = post.sourceChannelLogin, settings.showSharedChatSourceChannel {
-                Text("[\(sourceChannel)]")
-                    .foregroundStyle(.yellow.opacity(0.85))
-                    .font(.system(size: CGFloat(settings.fontSize) * 0.75))
-                    .lineLimit(1)
-            }
             if post.isRedemption() {
                 Text(" ")
             } else {
