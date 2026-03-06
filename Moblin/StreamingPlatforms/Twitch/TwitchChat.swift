@@ -127,6 +127,8 @@ private struct ChatMessage {
         replyText = message.replyText
         if let sourceRoomId = message.sourceRoomId {
             sourceChannelId = sourceRoomId
+        } else {
+            sourceChannelId = nil
         }
     }
 
@@ -589,13 +591,13 @@ final class TwitchChat {
             completion(cached)
             return
         }
-        TwitchApi(accessToken).getUserById(id: channelId) { [weak self] user in
+        TwitchApi(accessToken).getUserById(id: channelId, onComplete: { [weak self] user in
             let url = user?.profile_image_url.flatMap { URL(string: $0) }
             DispatchQueue.main.async {
                 if let url { self?.sourceChannelIcons[channelId] = url }
                 completion(url)
             }
-        }
+        })
     }
 
     private func handleClearMessage(message: TwitchChatMessage) {
