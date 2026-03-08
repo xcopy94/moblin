@@ -698,6 +698,14 @@ extension Model {
         media.attachBufferedAudio(cameraId: cameraId)
         remoteControlStateChanged(state: RemoteControlAssistantStreamerState(mic: micId))
     }
+
+    func startBackgroundChatAudio() {
+        backgroundChatAudioPlayer.start()
+    }
+
+    func stopBackgroundChatAudio() {
+        backgroundChatAudioPlayer.stop()
+    }
 }
 
 private func setBuiltInMicAudioMode(
