@@ -16,11 +16,11 @@ class BackgroundChatAudioPlayer {
             try session.setCategory(.playback, options: .mixWithOthers)
             try session.setActive(true)
         } catch {
-            logger.warning("BackgroundChatAudioPlayer: Failed to configure audio session: \(error)")
+            logger.info("BackgroundChatAudioPlayer: Failed to configure audio session: \(error)")
             return
         }
         guard let url = Bundle.main.url(forResource: "Alerts.bundle/Silence", withExtension: "mp3") else {
-            logger.warning("BackgroundChatAudioPlayer: Silence.mp3 not found in bundle")
+            logger.info("BackgroundChatAudioPlayer: Silence.mp3 not found in bundle")
             return
         }
         do {
@@ -29,7 +29,7 @@ class BackgroundChatAudioPlayer {
             player?.volume = 0
             player?.play()
         } catch {
-            logger.warning("BackgroundChatAudioPlayer: Failed to start silent audio player: \(error)")
+            logger.info("BackgroundChatAudioPlayer: Failed to start silent audio player: \(error)")
         }
     }
 
