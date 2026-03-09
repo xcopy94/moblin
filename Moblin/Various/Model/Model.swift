@@ -1382,6 +1382,9 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
             disableScreenPreview()
             stopPeriodicTimers(keepChatRunning: keepChatRunning,
                                keepBatteryLevelRunning: keepBatteryLevelRunning)
+            if keepChatRunning {
+                KeepChatAlivePlayer.shared.start()
+            }
         case .off:
             storeSettings()
             replaysStorage.store()
@@ -1400,6 +1403,8 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
         case .service:
             maybeEnableScreenPreview()
             startPeriodicTimers()
+            KeepChatAlivePlayer.shared.stop()
+            setupAudioSession()
         case .off:
             enterForegroundCount += 1
             if !makeBuyIconsToastIfNeeded() {
