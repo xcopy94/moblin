@@ -939,6 +939,14 @@ final class Media: NSObject {
         }
     }
 
+    func stopAudioCaptureSession() {
+        processor?.stopAudioCaptureSession()
+    }
+
+    func startAudioCaptureSession() {
+        processor?.startAudioCaptureSession()
+    }
+
     func getProcessor() -> Processor? {
         return processor
     }
