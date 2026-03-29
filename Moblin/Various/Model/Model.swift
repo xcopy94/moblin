@@ -405,6 +405,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     let snapshot = Snapshot()
     let quickButtons = QuickButtons()
     let mic = Mic()
+    let backgroundChatAudioPlayer = BackgroundChatAudioPlayer()
     let goPro = GoProState()
     let obsQuickButton = QuickButtonObs()
     let streamingHistory = StreamingHistory()
@@ -1389,6 +1390,10 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
             disableScreenPreview()
             stopPeriodicTimers(keepChatRunning: keepChatRunning,
                                keepBatteryLevelRunning: keepBatteryLevelRunning)
+            if keepChatRunning || keepBatteryLevelRunning {
+                startBackgroundChatAudio()
+                teardownAudioSession()
+            }
         case .off:
             storeSettings()
             replaysStorage.store()
@@ -1405,7 +1410,9 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
         case .full:
             maybeEnableScreenPreview()
         case .service:
+            stopBackgroundChatAudio()
             maybeEnableScreenPreview()
+            reloadAudioSession()
             startPeriodicTimers()
         case .off:
             enterForegroundCount += 1
@@ -1464,6 +1471,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     }
 
     private func stopAll() {
+        stopBackgroundChatAudio()
         if isRecording {
             suspendRecording()
         }
