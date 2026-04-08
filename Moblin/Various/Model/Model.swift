@@ -400,6 +400,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     var activeBufferedVideoIds: Set<UUID> = []
     var wiFiAwareSenderTask: Task<Void, Error>?
     var wiFiAwareReceiverTask: Task<Void, Error>?
+    let backgroundChatAudioPlayer = BackgroundChatAudioPlayer()
     let youTube = YouTube()
     let webBrowserState = WebBrowserState()
     let cameraLevel = CameraLevel()
@@ -1400,6 +1401,10 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
             disableScreenPreview()
             stopPeriodicTimers(keepChatRunning: keepChatRunning,
                                keepBatteryLevelRunning: keepBatteryLevelRunning)
+            teardownAudioSession()
+            processorControlQueue.async {
+                self.backgroundChatAudioPlayer.start()
+            }
         case .off:
             storeSettings()
             replaysStorage.store()
@@ -1416,8 +1421,10 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
         case .full:
             maybeEnableScreenPreview()
         case .service:
+            backgroundChatAudioPlayer.stop()
             maybeEnableScreenPreview()
             startPeriodicTimers()
+            reloadAudioSession()
         case .off:
             enterForegroundCount += 1
             if !makeBuyIconsToastIfNeeded() {
