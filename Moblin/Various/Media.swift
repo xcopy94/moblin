@@ -62,6 +62,7 @@ final class Media: NSObject {
     private var processor: Processor?
     private var srtTotalByteCount: Int64 = 0
     private var srtPreviousTotalByteCount: Int64 = 0
+    private var srtTransportAvgBitrate: Int64 = 0
     private var srtTransportBitrate: Int64 = 0
     private var currentAudioLevel: Float = defaultAudioLevel
     private var numberOfAudioChannels: Int = 0
@@ -234,7 +235,7 @@ final class Media: NSObject {
             connectionPriorities: connectionPriorities
         )
         srtlaClient!.start(uri: url, timeout: reconnectTime + 1, dnsLookupStrategy: dnsLookupStrategy)
-        srtTransportBitrate = Int64(targetBitrate)
+        srtTransportAvgBitrate = Int64(targetBitrate)
     }
 
     private func srtInitStream(
@@ -393,7 +394,9 @@ final class Media: NSObject {
                     "msRTT: \(stats.msRtt)",
                     "sndData: \(sndData)",
                     "B: \(adaptiveBitrate.getCurrentBitrateInKbps())",
+                    "mbpsSendRate: \(stats.mbpsSendRate)",
                     "Bt: \(srtTransportBitrate / 1000)",
+                    "Bta: \(srtTransportAvgBitrate / 1000)",
                 ], adaptiveBitrate.getActionsTaken())
             }
         } else {
@@ -434,7 +437,9 @@ final class Media: NSObject {
                 B: \(adaptiveBitrate.getCurrentBitrateInKbps()) /  \
                 \(adaptiveBitrate.getCurrentMaximumBitrateInKbps())
                 """,
+                "mbpsSendRate: \(stats.mbpsSendRate)",
                 "Bt: \(srtTransportBitrate / 1000)",
+                "Bta: \(srtTransportAvgBitrate / 1000)",
             ], adaptiveBitrate.getActionsTaken())
         } else {
             return ([
@@ -444,7 +449,9 @@ final class Media: NSObject {
                 "msRTT: \(stats.msRtt)",
                 "pktFlightSize: \(stats.pktFlightSize)",
                 "pktSndBuf: \(stats.pktSndBuf)",
+                "mbpsSendRate: \(stats.mbpsSendRate)",
                 "Bt: \(srtTransportBitrate / 1000)",
+                "Bta: \(srtTransportAvgBitrate / 1000)",
             ], [])
         }
     }
@@ -520,10 +527,12 @@ final class Media: NSObject {
         }
     }
 
-    func updateSrtTransportBitrate() {
+    func updateSrtTransportBitrate() { // called every 1s
         srtTotalByteCount = srtlaClient?.getTotalByteCount() ?? 0
-        let byteCount = max(srtTotalByteCount - srtPreviousTotalByteCount, 0)
-        srtTransportBitrate = Int64(Double(srtTransportBitrate) * 0.7 + Double(8 * byteCount) * 0.3)
+        let byteCount = max(srtTotalByteCount - srtPreviousTotalByteCount,
+                            0) // maybe generalize by dividing by time elapsed
+        srtTransportBitrate = 8 * byteCount
+        srtTransportAvgBitrate = Int64(Double(srtTransportAvgBitrate) * 0.7 + Double(8 * byteCount) * 0.3)
         srtPreviousTotalByteCount = srtTotalByteCount
     }
 
@@ -533,7 +542,7 @@ final class Media: NSObject {
         } else if let rtmpStream {
             return Int64(8 * rtmpStream.info.bitrateStats.value.latestSpeed)
         } else if isSrtStreamActive() {
-            return srtTransportBitrate
+            return srtTransportAvgBitrate
         } else if ristStream != nil {
             return Int64(ristStream?.getSpeed() ?? 0)
         } else if whipStream != nil {

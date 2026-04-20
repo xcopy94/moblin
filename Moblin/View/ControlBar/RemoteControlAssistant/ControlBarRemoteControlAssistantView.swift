@@ -649,7 +649,7 @@ private struct DebugLoggingView: View {
 private struct ControlBarRemoteControlAssistantControlView: View {
     let model: Model
     @ObservedObject var remoteControl: RemoteControl
-    var title: LocalizedStringKey = ""
+    var title: LocalizedStringKey = "sd"
     @State private var presentingLog: Bool = false
     @State private var log: Deque<LogEntry> = []
 
