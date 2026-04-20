@@ -1,5 +1,41 @@
 import AVFoundation
 
+class KeepChatAlivePlayer {
+    static let shared = KeepChatAlivePlayer()
+    private var player: AVAudioPlayer?
+
+    func start() {
+        guard player == nil else {
+            return
+        }
+        guard let soundUrl = Bundle.main.url(forResource: "Alerts.bundle/Silence", withExtension: "mp3")
+        else {
+            logger.info("keep-chat-alive: Failed to find Silence.mp3")
+            return
+        }
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, options: [.mixWithOthers])
+            try session.setActive(true)
+        } catch {
+            logger.info("keep-chat-alive: Failed to setup audio session: \(error)")
+            return
+        }
+        do {
+            player = try AVAudioPlayer(contentsOf: soundUrl)
+            player?.numberOfLoops = -1
+            player?.play()
+        } catch {
+            logger.info("keep-chat-alive: Failed to play silence: \(error)")
+        }
+    }
+
+    func stop() {
+        player?.stop()
+        player = nil
+    }
+}
+
 class KeepSpeakerAlivePlayer {
     static let shared = KeepSpeakerAlivePlayer()
     private var keepSpeakerAlivePlayer: AudioPlayer?
