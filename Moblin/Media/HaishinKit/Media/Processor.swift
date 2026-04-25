@@ -1,6 +1,21 @@
 import AVFoundation
 import SwiftUI
 
+struct EncodedOutputBitrateSnapshot: Sendable {
+    static let zero = EncodedOutputBitrateSnapshot(bitrate: 0, windowMs: 0, samples: 0)
+
+    var bitrate: Int64
+    var windowMs: Int64
+    var samples: Int
+}
+
+private struct EncodedOutputBitrateProbeState: Sendable {
+    var windowStart: ContinuousClock.Instant?
+    var bytes: UInt64 = 0
+    var samples: Int = 0
+    var snapshot: EncodedOutputBitrateSnapshot = .zero
+}
+
 protocol ProcessorDelegate: AnyObject {
     func stream(audioLevel: Float, numberOfAudioChannels: Int, sampleRate: Double)
     func streamVideo(lowFpsImage: Data?, frameNumber: UInt64)
@@ -39,6 +54,7 @@ final class Processor {
     let video = VideoUnit()
     let recorder = Recorder()
     private var streams: [Stream] = []
+    private var encodedOutputBitrateProbe: Atomic<EncodedOutputBitrateProbeState> = .init(.init())
     let delegate: ProcessorDelegate
 
     init(delegate: ProcessorDelegate) {
@@ -323,12 +339,49 @@ final class Processor {
         video.setBufferedVideoDrift(cameraId: cameraId, drift: drift)
     }
 
+    func getEncodedOutputBitrateSnapshot() -> EncodedOutputBitrateSnapshot {
+        return encodedOutputBitrateProbe.value.snapshot
+    }
+
     private func attachCameraInternal(params: VideoUnitAttachParams) throws {
         try video.attach(params: params)
     }
 
     private func attachAudioInternal(params: AudioUnitAttachParams) throws {
         try audio.attach(params: params)
+    }
+
+    private func updateEncodedOutputBitrateProbe(sampleBuffer: CMSampleBuffer, now: ContinuousClock.Instant = .now) {
+        guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else {
+            return
+        }
+        let byteCount = CMBlockBufferGetDataLength(blockBuffer)
+        guard byteCount > 0 else {
+            return
+        }
+        encodedOutputBitrateProbe.mutate { state in
+            if state.windowStart == nil {
+                state.windowStart = now
+            }
+            state.bytes += UInt64(byteCount)
+            state.samples += 1
+            guard let windowStart = state.windowStart else {
+                return
+            }
+            let duration = windowStart.duration(to: now)
+            guard duration > .milliseconds(200) else {
+                return
+            }
+            let bitrate = Int64(Double(8 * state.bytes) / duration.seconds)
+            state.snapshot = EncodedOutputBitrateSnapshot(
+                bitrate: bitrate,
+                windowMs: Int64(duration.milliseconds),
+                samples: state.samples
+            )
+            state.windowStart = now
+            state.bytes = 0
+            state.samples = 0
+        }
     }
 }
 
@@ -357,6 +410,7 @@ extension Processor: VideoEncoderDelegate {
                                         _ sampleBuffer: CMSampleBuffer,
                                         _ decodeTimeStampOffset: CMTime)
     {
+        updateEncodedOutputBitrateProbe(sampleBuffer: sampleBuffer)
         for stream in streams {
             stream.delegate?.videoEncoderOutputSampleBuffer(encoder, sampleBuffer, decodeTimeStampOffset)
         }
