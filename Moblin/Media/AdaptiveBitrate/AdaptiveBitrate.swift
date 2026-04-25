@@ -57,7 +57,7 @@ class AdaptiveBitrate {
         dateFormatter.dateFormat = "HH:mm:ss.SSS"
     }
 
-    func setTargetBitrate(bitrate _: UInt32) {}
+    func setTargetBitrate(bitrate _: UInt32, immediate _: Bool = false) {}
 
     func setSettings(settings _: AdaptiveBitrateSettings) {}
 

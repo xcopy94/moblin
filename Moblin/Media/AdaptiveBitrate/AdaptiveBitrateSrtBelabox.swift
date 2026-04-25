@@ -40,12 +40,16 @@ class AdaptiveBitrateSrtBelabox: AdaptiveBitrate {
 
     init(targetBitrate: UInt32, delegate: AdaptiveBitrateDelegate) {
         self.targetBitrate = Int64(targetBitrate)
-        currentBitrate = Int64(adaptiveBitrateStart)
+        currentBitrate = self.targetBitrate
         super.init(delegate: delegate)
     }
 
-    override func setTargetBitrate(bitrate: UInt32) {
+    override func setTargetBitrate(bitrate: UInt32, immediate: Bool) {
         targetBitrate = Int64(bitrate)
+        if immediate {
+            delegate?.adaptiveBitrateSetVideoStreamBitrate(bitrate: bitrate)
+            currentBitrate = targetBitrate
+        }
     }
 
     override func setSettings(settings: AdaptiveBitrateSettings) {

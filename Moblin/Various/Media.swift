@@ -807,7 +807,7 @@ final class Media: NSObject {
 
     func setVideoStreamBitrate(bitrate: UInt32) {
         if let adaptiveBitrate {
-            adaptiveBitrate.setTargetBitrate(bitrate: bitrate)
+            adaptiveBitrate.setTargetBitrate(bitrate: bitrate, immediate: true)
         } else {
             videoEncoderSettings.bitrate = bitrate
             commitVideoEncoderSettings()
