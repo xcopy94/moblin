@@ -38,6 +38,7 @@ class SettingsDebug: Codable, ObservableObject {
     @Published var dataRateLimitFactor: Float = 2.0
     @Published var bitrateDropFix: Bool = false
     @Published var relaxedBitrate: Bool = false
+    @Published var adaptiveBitrateImmediateTargetApply: Bool = true
     var externalDisplayChat: Bool = false
     var videoSourceWidgetTrackFace: Bool = false
     var replay: Bool = false
@@ -75,6 +76,7 @@ class SettingsDebug: Codable, ObservableObject {
              dataRateLimitFactor,
              bitrateDropFix,
              relaxedBitrate,
+             adaptiveBitrateImmediateTargetApply,
              externalDisplayChat,
              videoSourceWidgetTrackFace,
              srtlaBatchSendEnabled,
@@ -113,6 +115,7 @@ class SettingsDebug: Codable, ObservableObject {
         try container.encode(.dataRateLimitFactor, dataRateLimitFactor)
         try container.encode(.bitrateDropFix, bitrateDropFix)
         try container.encode(.relaxedBitrate, relaxedBitrate)
+        try container.encode(.adaptiveBitrateImmediateTargetApply, adaptiveBitrateImmediateTargetApply)
         try container.encode(.externalDisplayChat, externalDisplayChat)
         try container.encode(.videoSourceWidgetTrackFace, videoSourceWidgetTrackFace)
         try container.encode(.replay, replay)
@@ -154,6 +157,11 @@ class SettingsDebug: Codable, ObservableObject {
         dataRateLimitFactor = container.decode(.dataRateLimitFactor, Float.self, 2.0)
         bitrateDropFix = container.decode(.bitrateDropFix, Bool.self, false)
         relaxedBitrate = container.decode(.relaxedBitrate, Bool.self, false)
+        adaptiveBitrateImmediateTargetApply = container.decode(
+            .adaptiveBitrateImmediateTargetApply,
+            Bool.self,
+            true
+        )
         externalDisplayChat = container.decode(.externalDisplayChat, Bool.self, false)
         videoSourceWidgetTrackFace = container.decode(.videoSourceWidgetTrackFace, Bool.self, false)
         replay = container.decode(.replay, Bool.self, false)

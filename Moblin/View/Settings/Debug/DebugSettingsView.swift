@@ -96,6 +96,7 @@ struct DebugSettingsView: View {
                         .frame(width: 40)
                 }
                 Toggle("Relaxed bitrate decrement after scene switch", isOn: $debug.relaxedBitrate)
+                Toggle("Apply target bitrate immediately", isOn: $debug.adaptiveBitrateImmediateTargetApply)
                 Toggle("Twitch rewards", isOn: $debug.twitchRewards)
                 VStack(alignment: .leading) {
                     Text("Builtin audio and video delay")

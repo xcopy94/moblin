@@ -31844,6 +31844,9 @@
         }
       }
     },
+    "Apply target bitrate immediately" : {
+
+    },
     "Are you sure you want to import settings? This will replace your current settings." : {
       "localizations" : {
         "da" : {

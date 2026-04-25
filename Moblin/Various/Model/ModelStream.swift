@@ -776,7 +776,10 @@ extension Model {
     }
 
     func setStreamBitrate(stream: SettingsStream) {
-        media.setVideoStreamBitrate(bitrate: stream.bitrate)
+        media.setVideoStreamBitrate(
+            bitrate: stream.bitrate,
+            immediate: database.debug.adaptiveBitrateImmediateTargetApply
+        )
         updateStatusStreamText()
     }
 
