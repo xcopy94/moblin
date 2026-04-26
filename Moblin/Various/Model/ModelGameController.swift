@@ -4,11 +4,6 @@ import Spatial
 private let gimbalAngularVelocity: Double = 0.3
 
 extension Model {
-    func moveToGimbalPreset(id: UUID) {
-        moveToGimbalPresetQueue.append(id)
-        processGimbalPresetQueue()
-    }
-
     func handleControllerFunction(function: SettingsControllerFunction,
                                   sceneId: UUID?,
                                   widgetId: UUID?,
@@ -172,31 +167,6 @@ extension Model {
 
     func isGameControllerConnected() -> Bool {
         return numberOfGameControllers() > 0
-    }
-
-    private func processGimbalPresetQueue() {
-        guard !moveToGimbalPresetQueueRunning else {
-            return
-        }
-        guard let id = moveToGimbalPresetQueue.popFirst() else {
-            return
-        }
-        guard #available(iOS 18.0, *) else {
-            return
-        }
-        guard let preset = database.gimbal.presets.first(where: { $0.id == id }) else {
-            processGimbalPresetQueue()
-            return
-        }
-        moveToGimbalPresetQueueRunning = true
-        setZoomX(x: preset.zoomX, rate: database.zoom.speed)
-        Task { @MainActor [weak self] in
-            defer {
-                self?.moveToGimbalPresetQueueRunning = false
-                self?.processGimbalPresetQueue()
-            }
-            await Gimbal.shared?.setOrientation(angles: .init(x: preset.x, y: preset.y, z: 0))
-        }
     }
 
     private func handleGameControllerButtonZoom(pressed: Bool, x: Float) {

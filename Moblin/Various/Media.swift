@@ -610,10 +610,6 @@ final class Media: NSObject {
         return urlComponents.url
     }
 
-    private func makeStreamId(url: String) -> String? {
-        return URL(string: url)?.dictionaryFromQuery()["streamid"]
-    }
-
     func rtmpStartStream(url: String,
                          targetBitrate: UInt32,
                          adaptiveBitrate adaptiveBitrateEnabled: Bool)
@@ -814,14 +810,14 @@ final class Media: NSObject {
         }
     }
 
-    func setVideoStreamBitrateRateControl(bitrateRateControl: SettingsStreamBitrateRateControl) {
-        switch bitrateRateControl {
+    func setVideoStreamRateControl(rateControl: SettingsStreamRateControl) {
+        switch rateControl {
         case .abr:
-            videoEncoderSettings.bitrateRateControl = .abr
+            videoEncoderSettings.rateControl = .abr
         case .cbr:
-            videoEncoderSettings.bitrateRateControl = .cbr
+            videoEncoderSettings.rateControl = .cbr
         case .vbr:
-            videoEncoderSettings.bitrateRateControl = .vbr
+            videoEncoderSettings.rateControl = .vbr
         }
         commitVideoEncoderSettings()
     }
@@ -1189,7 +1185,7 @@ extension Media: SrtlaDelegate {
                     }
                 }
             } else {
-                self.srtStreamNew?.open(streamId: self.makeStreamId(url: self.srtUrl),
+                self.srtStreamNew?.open(streamId: extractSrtStreamId(url: self.srtUrl),
                                         latency: UInt16(self.latency),
                                         experimental: self.experimental)
             }

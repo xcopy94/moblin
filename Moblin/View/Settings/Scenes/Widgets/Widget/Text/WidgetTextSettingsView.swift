@@ -999,7 +999,7 @@ struct TextWidgetTextView: View {
 
     var body: some View {
         Section {
-            MultiLineTextFieldView(value: $value)
+            MultiLineTextFieldView(value: $value, placeholder: String(localized: "My text"))
                 .keyboardType(.default)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -1376,7 +1376,7 @@ struct WidgetTextSettingsView: View {
                     Text("Minimum width")
                     Spacer(minLength: 0)
                     Toggle(isOn: $text.widthEnabled) {}
-                        .padding([.trailing], 2)
+                        .padding(.trailing, 2)
                     GrayTextView(text: String(text.width))
                 }
                 .onChange(of: text.widthEnabled) { _ in

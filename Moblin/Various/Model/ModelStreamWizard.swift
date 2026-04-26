@@ -177,6 +177,11 @@ extension Model {
         stream.chat.ffzEmotes = false
         stream.chat.seventvEmotes = false
         stream.url = createStreamFromWizardUrl()
+        if stream.url.starts(with: "rtmp") {
+            stream.rateControl = .cbr
+        } else {
+            stream.rateControl = .abr
+        }
         switch createStreamWizard.networkSetup {
         case .none:
             stream.codec = createStreamWizard.customProtocol.toDefaultCodec()

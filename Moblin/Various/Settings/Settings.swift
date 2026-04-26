@@ -144,7 +144,7 @@ class SettingsShow: Codable, ObservableObject {
     @Published var audioBar: Bool = true
     @Published var cameras: Bool = false
     @Published var obsStatus: Bool = true
-    @Published var rtmpSpeed: Bool = true
+    @Published var ingests: Bool = true
     @Published var gameController: Bool = true
     @Published var location: Bool = false
     @Published var remoteControl: Bool = true
@@ -202,7 +202,7 @@ class SettingsShow: Codable, ObservableObject {
         try container.encode(.audioBar, audioBar)
         try container.encode(.cameras, cameras)
         try container.encode(.obsStatus, obsStatus)
-        try container.encode(.rtmpSpeed, rtmpSpeed)
+        try container.encode(.rtmpSpeed, ingests)
         try container.encode(.gameController, gameController)
         try container.encode(.location, location)
         try container.encode(.remoteControl, remoteControl)
@@ -231,7 +231,7 @@ class SettingsShow: Codable, ObservableObject {
         audioBar = container.decode(.audioBar, Bool.self, true)
         cameras = container.decode(.cameras, Bool.self, false)
         obsStatus = container.decode(.obsStatus, Bool.self, true)
-        rtmpSpeed = container.decode(.rtmpSpeed, Bool.self, true)
+        ingests = container.decode(.rtmpSpeed, Bool.self, true)
         gameController = container.decode(.gameController, Bool.self, true)
         location = container.decode(.location, Bool.self, false)
         remoteControl = container.decode(.remoteControl, Bool.self, true)
@@ -1128,6 +1128,7 @@ class Database: Codable, ObservableObject {
     var selfieStick: SettingsSelfieStick = .init()
     @Published var bigButtons: Bool = false
     @Published var verticalButtons: Bool = false
+    @Published var bigAudioLevelMeter: Bool = false
     var ristServer: SettingsRistServer = .init()
     var disconnectProtection: SettingsDisconnectProtection = .init()
     var rtspClient: SettingsRtspClient = .init()
@@ -1236,6 +1237,7 @@ class Database: Codable, ObservableObject {
              selfieStick,
              bigButtons,
              verticalButtons,
+             bigAudioLevelMeter,
              ristServer,
              disconnectProtection,
              rtspClient,
@@ -1315,6 +1317,7 @@ class Database: Codable, ObservableObject {
         try container.encode(.selfieStick, selfieStick)
         try container.encode(.bigButtons, bigButtons)
         try container.encode(.verticalButtons, verticalButtons)
+        try container.encode(.bigAudioLevelMeter, bigAudioLevelMeter)
         try container.encode(.ristServer, ristServer)
         try container.encode(.disconnectProtection, disconnectProtection)
         try container.encode(.rtspClient, rtspClient)
@@ -1440,6 +1443,7 @@ class Database: Codable, ObservableObject {
         selfieStick = container.decode(.selfieStick, SettingsSelfieStick.self, .init())
         bigButtons = container.decode(.bigButtons, Bool.self, false)
         verticalButtons = container.decode(.verticalButtons, Bool.self, false)
+        bigAudioLevelMeter = container.decode(.bigAudioLevelMeter, Bool.self, false)
         ristServer = container.decode(.ristServer, SettingsRistServer.self, .init())
         disconnectProtection = container.decode(
             .disconnectProtection,

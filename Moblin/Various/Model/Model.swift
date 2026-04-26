@@ -1,3 +1,4 @@
+import ActivityKit
 import AlertToast
 import AVKit
 import Collections
@@ -450,6 +451,9 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     private var manualFocusMotionAttitude: CMAttitude?
     var streaming = false
     var inServiceBackground = false
+    #if !targetEnvironment(macCatalyst)
+    var liveActivity: Activity<LiveActivityAttributes>?
+    #endif
     var streamStartTime: ContinuousClock.Instant?
     var isRecorderRecording = false
     var currentRecording: Recording?
@@ -467,7 +471,6 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     var soopChat: SoopChat?
     var soopPlatformStatus: SoopPlatformStatus?
     private var openStreamingPlatformChat: OpenStreamingPlatformChat!
-    var dliveChat: DLiveChat?
     var youTubeFetchVideoIdStartTime: ContinuousClock.Instant?
     var youTubePlatformStatus: PlatformStatus = .unknown
     var youTubeStreamUpdateTimePollDelta: ContinuousClock.Duration = .seconds(15)
@@ -985,7 +988,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
         media = Media(delegate: self)
         setupAppIntents()
         faxReceiver.delegate = self
-        fixAlertMedias()
+        fixAlertMediasNoUpdate()
         setAllowVideoRangePixelFormat()
         setExternalDisplayContent()
         portraitVideoOffsetFromTop = database.portraitVideoOffsetFromTop
@@ -1407,11 +1410,13 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
             if !pictureInPictureEnabled() {
                 disableScreenPreview()
             }
+            startLiveActivity()
         case let .service(keepChatRunning, keepBatteryLevelRunning):
             inServiceBackground = true
             disableScreenPreview()
             stopPeriodicTimers(keepChatRunning: keepChatRunning,
                                keepBatteryLevelRunning: keepBatteryLevelRunning)
+            startLiveActivity()
         case .off:
             storeSettings()
             replaysStorage.store()
@@ -1420,6 +1425,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     }
 
     @objc func handleWillEnterForegroundNotification() {
+        stopLiveActivity()
         guard !isMac() else {
             return
         }
@@ -1480,6 +1486,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
         if isMac() {
             stopAll()
         }
+        stopLiveActivity()
     }
 
     private func stopAll() {
@@ -1701,7 +1708,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
         media.logStatistics()
         updateObsStatus()
         updateRemoteControlStatus()
-        if stream.enabled {
+        if stream.enabled, database.debug.videoBitrateChange {
             media.updateVideoStreamBitrate(bitrate: stream.bitrate)
         }
         updateViewers()
@@ -1856,6 +1863,11 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     }
 
     func fixAlertMedias() {
+        fixAlertMediasNoUpdate()
+        updateAlertsSettings()
+    }
+
+    private func fixAlertMediasNoUpdate() {
         for widget in database.widgets {
             fixAlert(alert: widget.alerts.twitch.follows)
             fixAlert(alert: widget.alerts.twitch.subscriptions)
@@ -1863,7 +1875,6 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
                 fixAlert(alert: command.alert)
             }
         }
-        updateAlertsSettings()
     }
 
     private func removeUnusedAlertMedias() {
@@ -3026,11 +3037,16 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     }
 
     func isShowingStatusIngests() -> Bool {
-        return database.show.rtmpSpeed && isIngestsConfigured()
+        return database.show.ingests && isIngestsConfigured()
     }
 
     func isIngestsConfigured() -> Bool {
-        return rtmpServerEnabled() || srtlaServerEnabled() || ristServerEnabled() || !ingests.rtsp.isEmpty
+        return rtmpServerEnabled()
+            || srtlaServerEnabled()
+            || ristServerEnabled()
+            || !ingests.rtsp.isEmpty
+            || whipServerEnabled()
+            || !ingests.whep.isEmpty
     }
 
     func isShowingStatusMoblink() -> Bool {
