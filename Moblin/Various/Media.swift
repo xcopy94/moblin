@@ -80,6 +80,8 @@ final class Media: NSObject {
     private var multiplier: UInt32 = 0
     private var updateTickCount: UInt64 = 0
     private var belaLinesAndActions: ([String], [String])?
+    private var belaSndDataHistory: [Int32] = []
+    private let belaSndDataHistoryMaxCount = 5
     private var srtConnected = false
     private var srtImplementation: SettingsStreamSrtImplementation = .moblin
     private var canvasSize: CGSize = .init(width: 1920, height: 1080)
@@ -258,6 +260,8 @@ final class Media: NSObject {
         srtTotalByteCount = 0
         srtPreviousTotalByteCount = 0
         srtDroppedPacketsTotal = 0
+        belaSndDataHistory.removeAll(keepingCapacity: true)
+        belaLinesAndActions = nil
         srtlaClient?.stop()
         srtlaClient = SrtlaClient(
             delegate: self,
@@ -279,6 +283,8 @@ final class Media: NSObject {
         srtlaClient?.stop()
         srtlaClient = nil
         adaptiveBitrate = nil
+        belaSndDataHistory.removeAll(keepingCapacity: true)
+        belaLinesAndActions = nil
     }
 
     func addMoblink(endpoint: NWEndpoint, id: UUID, name: String) {
@@ -385,12 +391,17 @@ final class Media: NSObject {
         guard let sndData else {
             return nil
         }
+        belaSndDataHistory.append(sndData)
+        if belaSndDataHistory.count > belaSndDataHistoryMaxCount {
+            belaSndDataHistory.removeFirst(belaSndDataHistory.count - belaSndDataHistoryMaxCount)
+        }
+        let sndDataPrev = belaSndDataHistory.dropLast().map(String.init).joined(separator: ", ")
         adaptiveBitrate.update(stats: StreamStats(
             rttMs: stats.msRtt,
             packetsInFlight: Double(sndData),
             transportBitrate: streamTransportBitrate(),
             latency: latency,
-            mbpsSendRate: stats.mbpsSendRate,
+            mbpsSendRate: stats.mbpsBandwidth,
             relaxed: relaxed
         ))
         if overlay {
@@ -402,9 +413,11 @@ final class Media: NSObject {
                     """,
                     "msRTT: \(stats.msRtt)",
                     "sndData: \(sndData)",
+                    "sndDataPrev: \(sndDataPrev.isEmpty ? "n/a" : sndDataPrev)",
                     "B: \(adaptiveBitrate.getCurrentBitrateInKbps())",
                     encodedOutputOverlayLine(targetKbps: adaptiveBitrate.getCurrentBitrateInKbps()),
                     "mbpsSendRate: \(stats.mbpsSendRate)",
+                    "mbpsBandwidth: \(stats.mbpsBandwidth)",
                     "Bt: \(srtTransportBitrate / 1000)",
                     "Bta: \(srtTransportAvgBitrate / 1000)",
                 ], adaptiveBitrate.getActionsTaken())
@@ -449,6 +462,7 @@ final class Media: NSObject {
                 """,
                 encodedOutputOverlayLine(targetKbps: adaptiveBitrate.getCurrentBitrateInKbps()),
                 "mbpsSendRate: \(stats.mbpsSendRate)",
+                "mbpsBandwidth: \(stats.mbpsBandwidth)",
                 "Bt: \(srtTransportBitrate / 1000)",
                 "Bta: \(srtTransportAvgBitrate / 1000)",
             ], adaptiveBitrate.getActionsTaken())
@@ -461,6 +475,7 @@ final class Media: NSObject {
                 "pktFlightSize: \(stats.pktFlightSize)",
                 "pktSndBuf: \(stats.pktSndBuf)",
                 "mbpsSendRate: \(stats.mbpsSendRate)",
+                "mbpsBandwidth: \(stats.mbpsBandwidth)",
                 "Bt: \(srtTransportBitrate / 1000)",
                 "Bta: \(srtTransportAvgBitrate / 1000)",
             ], [])

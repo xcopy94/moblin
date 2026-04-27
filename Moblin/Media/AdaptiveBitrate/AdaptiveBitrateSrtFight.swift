@@ -179,7 +179,7 @@ class AdaptiveBitrateSrtFight: AdaptiveBitrate {
         let factorDecrease = Int64(Double(currentMaximumBitrate) * (1 - factor))
         let decrease = max(factorDecrease, minimumDecrease)
         currentMaximumBitrate -= decrease
-        logAdaptiveAcion(
+        logAdaptiveAction(
             actionTaken: """
             PIF: Decreasing bitrate by \(decrease / 1000)k, smooth \(Int(smoothPif)) > max \(Int(pifMax))
             """
@@ -193,7 +193,7 @@ class AdaptiveBitrateSrtFight: AdaptiveBitrate {
         let factorDecrease = Int64(Double(currentMaximumBitrate) * (1 - factor))
         let decrease = max(factorDecrease, minimumDecrease)
         currentMaximumBitrate -= decrease
-        logAdaptiveAcion(
+        logAdaptiveAction(
             actionTaken: "RTT: Decrease bitrate by \(decrease), avg \(avgRtt) > max \(rttMax)"
         )
     }
@@ -210,7 +210,7 @@ class AdaptiveBitrateSrtFight: AdaptiveBitrate {
         let factorDecrease = Int64(Double(currentMaximumBitrate) * (1 - factor))
         let decrease = max(factorDecrease, minimumDecrease)
         currentMaximumBitrate -= decrease
-        logAdaptiveAcion(
+        logAdaptiveAction(
             actionTaken: """
             RTT: Decreasing bitrate by \(decrease / 1000)k, \
             \(Int(stats.rttMs)) > avg + allow \(Int(avgRtt)) + \(Int(rttSpikeAllowed))
@@ -222,7 +222,7 @@ class AdaptiveBitrateSrtFight: AdaptiveBitrate {
         var pifSpikeDiff = Int64(fastPif) - Int64(smoothPif)
         // lazy decrease
         if pifSpikeDiff > settings.packetsInFlight {
-            logAdaptiveAcion(
+            logAdaptiveAction(
                 actionTaken: "PIF: Lazy decrease diff \(pifSpikeDiff) > \(settings.packetsInFlight)"
             )
             currentMaximumBitrate = Int64(Double(currentMaximumBitrate) * 0.95)
@@ -239,7 +239,7 @@ class AdaptiveBitrateSrtFight: AdaptiveBitrate {
         // harder decrease
         if pifSpikeDiff == settings.packetsInFlight {
             currentMaximumBitrate -= 500_000
-            logAdaptiveAcion(
+            logAdaptiveAction(
                 actionTaken: "PIF: -500 dec diff \(pifSpikeDiff) == \(settings.packetsInFlight)"
             )
         }

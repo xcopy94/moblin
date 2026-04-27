@@ -9,7 +9,8 @@ struct SrtPerformanceData {
         pktFlightSize: 0,
         msRtt: 0,
         pktSndBuf: 0,
-        mbpsSendRate: 0
+        mbpsSendRate: 0,
+        mbpsBandwidth: 0
     )
 
     var pktRetransTotal: Int32
@@ -19,6 +20,7 @@ struct SrtPerformanceData {
     var msRtt: Double
     var pktSndBuf: Int32
     var mbpsSendRate: Double
+    var mbpsBandwidth: Double
 
     init(mon: CBytePerfMon) {
         pktRetransTotal = mon.pktRetransTotal
@@ -28,6 +30,7 @@ struct SrtPerformanceData {
         msRtt = mon.msRTT
         pktSndBuf = mon.pktSndBuf
         mbpsSendRate = mon.mbpsSendRate
+        mbpsBandwidth = mon.mbpsBandwidth
     }
 
     init(
@@ -37,7 +40,8 @@ struct SrtPerformanceData {
         pktFlightSize: Int32,
         msRtt: Double,
         pktSndBuf: Int32,
-        mbpsSendRate: Double
+        mbpsSendRate: Double,
+        mbpsBandwidth: Double
     ) {
         self.pktRetransTotal = pktRetransTotal
         self.pktRecvNakTotal = pktRecvNakTotal
@@ -46,5 +50,6 @@ struct SrtPerformanceData {
         self.msRtt = msRtt
         self.pktSndBuf = pktSndBuf
         self.mbpsSendRate = mbpsSendRate
+        self.mbpsBandwidth = mbpsBandwidth
     }
 }

@@ -89,7 +89,7 @@ class AdaptiveBitrate {
         return actionsTaken.map { $0.message }
     }
 
-    func logAdaptiveAcion(actionTaken: String) {
+    func logAdaptiveAction(actionTaken: String) {
         logger.debug("adaptive-bitrate: \(actionTaken)")
         let dateString = dateFormatter.string(from: Date())
         actionsTaken.append(ActionTaken(message: dateString + " " + actionTaken))
