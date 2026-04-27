@@ -36,11 +36,11 @@ class AdaptiveBitrateSrtBelabox: AdaptiveBitrate {
     private var throughput: Double = 0.0
     private var nextBitrateIncrTime: ContinuousClock.Instant = .now
     private var nextBitrateDecrTime: ContinuousClock.Instant = .now
-    private var currentBitrate: Int64 = 0
+    private var latestBitrate: Int64 = 0 // latest control output (latest value sent to the encoder)
 
     init(targetBitrate: UInt32, delegate: AdaptiveBitrateDelegate) {
         self.targetBitrate = Int64(targetBitrate)
-        currentBitrate = self.targetBitrate
+        latestBitrate = self.targetBitrate
         super.init(delegate: delegate)
     }
 
@@ -48,7 +48,7 @@ class AdaptiveBitrateSrtBelabox: AdaptiveBitrate {
         targetBitrate = Int64(bitrate)
         if immediate {
             delegate?.adaptiveBitrateSetVideoStreamBitrate(bitrate: bitrate)
-            currentBitrate = targetBitrate
+            latestBitrate = targetBitrate
         }
     }
 
@@ -58,15 +58,15 @@ class AdaptiveBitrateSrtBelabox: AdaptiveBitrate {
     }
 
     override func getCurrentBitrate() -> UInt32 {
-        return UInt32(currentBitrate)
+        return UInt32(latestBitrate)
     }
 
     override func getCurrentMaximumBitrateInKbps() -> Int64 {
-        return Int64(currentBitrate) / 1000
+        return Int64(latestBitrate) / 1000
     }
 
     private func rttToSendBufferSize(rtt: Double, throughput: Double) -> Double {
-        return (throughput / 8) * rtt / 1316
+        return (throughput / 8) * rtt / 1316 // TODO: use real packet size
     }
 
     private func updateSendBufferSizeAverage(sendBufferSize: Double) {
@@ -113,7 +113,7 @@ class AdaptiveBitrateSrtBelabox: AdaptiveBitrate {
 
     private func updateThroughput(mbpsSendRate: Double) {
         throughput *= 0.97
-        throughput += (mbpsSendRate * 1000.0 * 1000.0 / 1024.0) * 0.03
+        throughput += (mbpsSendRate * 1000.0 * 1000.0 / 1024.0) * 0.03 // TODO: why 1024?
     }
 
     private func updateBitrate(stats: StreamStats) {
@@ -131,7 +131,7 @@ class AdaptiveBitrateSrtBelabox: AdaptiveBitrate {
         updateThroughput(mbpsSendRate: stats.mbpsSendRate!)
         let srtLatency = Double(stats.latency ?? defaultSrtLatency)
         let currentTime = ContinuousClock.now
-        var bitrate = currentBitrate
+        var bitrate = latestBitrate
         let sendBufferSizeTh3 = (sendBufferSizeAverage + sendBufferSizeJitter) * 4
         var sendBufferSizeTh2 = max(
             50,
@@ -147,33 +147,36 @@ class AdaptiveBitrateSrtBelabox: AdaptiveBitrate {
         let sendBufferSizeTh1 = max(50, sendBufferSizeAverage + sendBufferSizeJitter * 2.5)
         let rttThMax = rttAverage + max(rttJitter * 4, rttAverage * 15 / 100)
         let rttThMin = rttMin + max(1, rttJitter * 2)
+        let bitrateForLowering = stats.limitByTransportBitrate(bitrate: latestBitrate)
         if bitrate > settings.minimumBitrate, rtt >= (srtLatency / 3) || sendBufferSize > sendBufferSizeTh3 {
             bitrate = settings.minimumBitrate
             nextBitrateDecrTime = currentTime.advanced(by: bitrateDecrInterval)
             logAdaptiveAcion(
                 actionTaken: """
-                Set min: \(bitrate / 1000), rtt: \(rtt) >= latency / 3: \(srtLatency / 3) \
+                Set min: \(bitrateForLowering / 1000) -> \(bitrate / 1000), rtt: \(rtt) >= latency / 3: \(srtLatency / 3) \
                 or bs: \(sendBufferSize) > bs_th3: \(formatTwoDecimals(sendBufferSizeTh3))
                 """
             )
         } else if currentTime > nextBitrateDecrTime,
                   rtt > (srtLatency / 5) || sendBufferSize > sendBufferSizeTh2
         {
+            bitrate = bitrateForLowering
             bitrate -= (bitrateDecrMin + bitrate / bitrateDecrScale)
             nextBitrateDecrTime = currentTime.advanced(by: bitrateDecrFastInterval)
             logAdaptiveAcion(
                 actionTaken: """
-                Fast decr: \((bitrateDecrMin + bitrate / bitrateDecrScale) / 1000), \
+                Fast decr: \(bitrateForLowering / 1000) - \((bitrateDecrMin + bitrate / bitrateDecrScale) / 1000), \
                 rtt: \(rtt) > latency / 5: \(srtLatency / 5) or bs: \(sendBufferSize) > bs_th2: \
                 \(formatTwoDecimals(sendBufferSizeTh2))
                 """
             )
         } else if currentTime > nextBitrateDecrTime, rtt > rttThMax || sendBufferSize > sendBufferSizeTh1 {
+            bitrate = bitrateForLowering
             bitrate -= bitrateDecrMin
             nextBitrateDecrTime = currentTime.advanced(by: bitrateDecrInterval)
             logAdaptiveAcion(
                 actionTaken: """
-                Decr: \(bitrateDecrMin / 1000), rtt: \(rtt) > rtt_th_max: \
+                Decr: \(bitrateForLowering / 1000) - \(bitrateDecrMin / 1000), rtt: \(rtt) > rtt_th_max: \
                 \(formatTwoDecimals(rttThMax)) or bs: \(sendBufferSize) > bs_th1: \
                 \(formatTwoDecimals(sendBufferSizeTh1))
                 """
@@ -182,10 +185,9 @@ class AdaptiveBitrateSrtBelabox: AdaptiveBitrate {
             bitrate += bitrateIncrMin + bitrate / bitrateIncrScale
             nextBitrateIncrTime = currentTime.advanced(by: bitrateIncrInterval)
         }
-        bitrate = stats.limitByTransportBitrate(bitrate: bitrate)
         bitrate = max(min(bitrate, targetBitrate), settings.minimumBitrate)
-        if bitrate != currentBitrate {
-            currentBitrate = bitrate
+        if bitrate != latestBitrate {
+            latestBitrate = bitrate
             delegate?.adaptiveBitrateSetVideoStreamBitrate(bitrate: UInt32(bitrate))
         }
     }
