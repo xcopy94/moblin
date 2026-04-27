@@ -369,7 +369,7 @@ final class Processor {
                 return
             }
             let duration = windowStart.duration(to: now)
-            guard duration > .milliseconds(200) else {
+            guard duration > .milliseconds(1000) else {
                 return
             }
             let bitrate = Int64(Double(8 * state.bytes) / duration.seconds)

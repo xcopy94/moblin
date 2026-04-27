@@ -354,6 +354,15 @@ final class Media: NSObject {
     private func isSrtStreamActive() -> Bool {
         return srtStreamNew != nil || srtStreamOld != nil
     }
+    
+    private func encodedOutputOverlayLine(targetKbps: Int64?) -> String {
+        let snapshot = processor?.getEncodedOutputBitrateSnapshot() ?? .zero
+        let targetText = targetKbps.map(String.init) ?? "n/a"
+        guard snapshot.windowMs > 0, snapshot.samples > 0 else {
+            return "Enc: n/a / \(targetText) kbps"
+        }
+        return "Enc: \(snapshot.bitrate / 1000) / \(targetText) kbps (\(snapshot.windowMs) ms)"
+    }
 
     private func updateAdaptiveBitrateSrtBela(overlay: Bool,
                                               relaxed: Bool,
@@ -394,6 +403,7 @@ final class Media: NSObject {
                     "msRTT: \(stats.msRtt)",
                     "sndData: \(sndData)",
                     "B: \(adaptiveBitrate.getCurrentBitrateInKbps())",
+                    encodedOutputOverlayLine(targetKbps: adaptiveBitrate.getCurrentBitrateInKbps()),
                     "mbpsSendRate: \(stats.mbpsSendRate)",
                     "Bt: \(srtTransportBitrate / 1000)",
                     "Bta: \(srtTransportAvgBitrate / 1000)",
@@ -437,6 +447,7 @@ final class Media: NSObject {
                 B: \(adaptiveBitrate.getCurrentBitrateInKbps()) /  \
                 \(adaptiveBitrate.getCurrentMaximumBitrateInKbps())
                 """,
+                encodedOutputOverlayLine(targetKbps: adaptiveBitrate.getCurrentBitrateInKbps()),
                 "mbpsSendRate: \(stats.mbpsSendRate)",
                 "Bt: \(srtTransportBitrate / 1000)",
                 "Bta: \(srtTransportAvgBitrate / 1000)",
@@ -481,6 +492,7 @@ final class Media: NSObject {
                 B: \(adaptiveBitrate.getCurrentBitrateInKbps()) /  \
                 \(adaptiveBitrate.getCurrentMaximumBitrateInKbps())
                 """,
+                encodedOutputOverlayLine(targetKbps: adaptiveBitrate.getCurrentBitrateInKbps()),
             ], adaptiveBitrate.getActionsTaken())
         } else {
             return ([
@@ -519,6 +531,7 @@ final class Media: NSObject {
                 B: \(adaptiveBitrate.getCurrentBitrateInKbps()) /  \
                 \(adaptiveBitrate.getCurrentMaximumBitrateInKbps())
                 """,
+                encodedOutputOverlayLine(targetKbps: adaptiveBitrate.getCurrentBitrateInKbps()),
             ], adaptiveBitrate.getActionsTaken())
         } else {
             return ([
