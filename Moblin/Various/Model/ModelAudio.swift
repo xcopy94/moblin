@@ -57,7 +57,34 @@ extension Model {
     func reloadAudioSession() {
         teardownAudioSession()
         setupAudioSession()
-        media.attachDefaultAudioDevice(builtinDelay: database.debug.builtinAudioAndVideoDelay)
+        // Chain on processorControlQueue so attachDefaultAudioDevice runs only after
+        // teardown and setup have both completed (serial queue ordering).
+        let builtinDelay = database.debug.builtinAudioAndVideoDelay
+        processorControlQueue.async {
+            DispatchQueue.main.async {
+                self.media.attachDefaultAudioDevice(builtinDelay: builtinDelay)
+            }
+        }
+    }
+
+    func stopAudioForBackground() {
+        // 1. Stop AVCaptureSession (removes orange mic indicator)
+        media.stopAudioCaptureSession()
+        // 2. Tear down playAndRecord AVAudioSession, then start silent playback
+        //    player. Both steps run on processorControlQueue to preserve ordering.
+        teardownAudioSession()
+        processorControlQueue.async {
+            self.backgroundChatAudioPlayer.start()
+        }
+    }
+
+    func startAudioFromBackground() {
+        // 1. Stop silent background player and deactivate its audio session
+        processorControlQueue.async {
+            self.backgroundChatAudioPlayer.stop()
+        }
+        // 2. Restore playAndRecord audio session, then re-attach the mic.
+        reloadAudioSession()
     }
 
     func setInputGainIfSupported(inputGain: Float) {

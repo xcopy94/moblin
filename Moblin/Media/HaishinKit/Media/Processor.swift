@@ -299,6 +299,18 @@ final class Processor {
         audio.stopRunning()
     }
 
+    func stopAudioCaptureSession() {
+        processorControlQueue.async {
+            self.audio.stopRunning()
+        }
+    }
+
+    func startAudioCaptureSession() {
+        processorControlQueue.async {
+            self.audio.startRunning()
+        }
+    }
+
     func setDrawable(drawable: PreviewView?) {
         video.drawable = drawable
     }
