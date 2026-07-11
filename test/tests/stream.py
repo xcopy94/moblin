@@ -53,6 +53,23 @@ class StreamSrtToFfmpeg(TestCase):
             self.assert_greater(metadata.format.duration, 10)
             self.assert_less(metadata.format.duration, 20)
 
+class StreamSrtToFfmpeg60FPS(TestCase):
+    """SRT stream from Moblin to ffmpeg for a few seconds, 60 FPS."""
+
+    def run(self):
+        filename = Path("files/StreamSrtFromMoblinToFfmpeg.ts")
+        self.moblin.set_scene("Front")
+        with FfmpegServer(url="srt://0.0.0.0:8890?mode=listener", filename=filename):
+            self.moblin.set_stream("SRT 5Mbps 60FPS")
+            self.moblin.go_live()
+            self.moblin.wait_for_bitrate(4_000_000, 6_000_000, None, 10_000_000)
+            self.moblin.end()
+            metadata = ffprobe(filename)
+            self.assert_equal(metadata.video.codec, "hevc")
+            self.assert_equal(metadata.audio.codec, "aac")
+            self.assert_greater(metadata.format.duration, 10)
+            self.assert_less(metadata.format.duration, 20)
+
 
 class StreamSrtToFfmpegHighBitrate(TestCase):
     """SRT stream from Moblin to ffmpeg at 50 Mbps for a few seconds."""
@@ -128,6 +145,7 @@ def tests(moblin: Moblin):
         StreamRtmpToMediaMtx(moblin),
         StreamSrtToMediaMtx(moblin),
         StreamSrtToFfmpeg(moblin),
+        StreamSrtToFfmpeg60FPS(moblin),
         StreamSrtToFfmpegHighBitrate(moblin),
         StreamSrtToFfmpegEncrypted(moblin),
         StreamMultiRtmpToMediaMtx(moblin),

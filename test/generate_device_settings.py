@@ -47,6 +47,14 @@ def create_streams_settings(config: Config):
             "bitrate": 5_000_000,
         },
         {
+            "name": "SRT 5Mbps 60FPS",
+            "bitrateRateControl": "CBR",
+            "url": f"srt://{config.tester_ip_address()}:8890?streamid=publish:test",
+            "srt": {"adaptiveBitrateEnabled": False},
+            "bitrate": 5_000_000,
+            "fps": 60,
+        },
+        {
             "name": "SRT encrypted",
             "bitrateRateControl": "CBR",
             "url": f"srt://{config.tester_ip_address()}:8890?streamid=publish:test&passphrase=1234567890",
