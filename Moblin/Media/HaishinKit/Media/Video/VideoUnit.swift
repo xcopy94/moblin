@@ -147,6 +147,7 @@ private struct CaptureSessionDevice {
     let input: AVCaptureInput
     let output: AVCaptureVideoDataOutput
     let connection: AVCaptureConnection
+    var stabilizationObserver: NSKeyValueObservation?
 }
 
 private func makeCaptureSession() -> AVCaptureSession {
@@ -1952,17 +1953,30 @@ final class VideoUnit: NSObject, @unchecked Sendable {
         if failed {
             processor?.delegate.streamVideoAttachCameraError()
         } else {
+            let deviceName = device.device.localizedName
+            let observer = connection!.observe(\.activeVideoStabilizationMode, options: [.new, .initial]) {
+                connection, _ in
+                DispatchQueue.main.async {
+                    logger.debug("""
+                    video-stabilization: \(deviceName): \
+                    preferred=\(connection.preferredVideoStabilizationMode.name), \
+                    active=\(connection.activeVideoStabilizationMode.name)
+                    """)
+                }
+            }
             captureSessionDevices.append(CaptureSessionDevice(
                 device: device,
                 input: input,
                 output: output,
-                connection: connection!
+                connection: connection!,
+                stabilizationObserver: observer
             ))
         }
     }
 
     private func removeDevices(_ session: AVCaptureSession) {
         for device in captureSessionDevices {
+            device.stabilizationObserver?.invalidate()
             removeConnection(session, device.connection)
             removeInput(session, device.input)
             removeOutput(session, device.output)
@@ -2204,3 +2218,22 @@ extension VideoUnit: MacScreenCaptureDelegate {
     }
 }
 #endif
+
+extension AVCaptureVideoStabilizationMode {
+    var name: String {
+        switch self {
+        case .off:
+            "off"
+        case .standard:
+            "standard"
+        case .cinematic:
+            "cinematic"
+        case .cinematicExtendedEnhanced:
+            "cinematicExtendedEnhanced"
+        case .auto:
+            "auto"
+        @unknown default:
+            "unknown(\(rawValue))"
+        }
+    }
+}
