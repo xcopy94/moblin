@@ -57,6 +57,7 @@ struct DisplaySettingsView: View {
                     .onChange(of: database.vibrate) { _ in
                         model.setAllowHapticsAndSystemSoundsDuringRecording()
                     }
+                Toggle("Connection status sound", isOn: $database.show.connectionStatusSound)
             } footer: {
                 VStack(alignment: .leading) {
                     Text("Enable to vibrate the device when the following toasts appear:")

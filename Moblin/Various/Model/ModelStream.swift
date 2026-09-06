@@ -579,6 +579,9 @@ extension Model {
         if streamState == .connected {
             streamTotalBytes += UInt64(media.streamTotal())
             makeFffffToast(subTitle: subTitle)
+            if database.show.connectionStatusSound, connectionStatusSoundEnabled {
+                playConnectionStatusSound()
+            }
         } else if streamState == .connecting {
             makeConnectFailureToast(subTitle: subTitle)
             if database.show.connectionStatusSound, connectionStatusSoundEnabled {

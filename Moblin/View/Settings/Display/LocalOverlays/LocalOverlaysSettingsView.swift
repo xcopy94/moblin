@@ -94,11 +94,6 @@ struct LocalOverlaysSettingsView: View {
                     Image(systemName: "speedometer")
                 }
                 Label {
-                    Toggle("Connection status sound", isOn: $show.connectionStatusSound)
-                } icon: {
-                    Image(systemName: "speaker.wave.2")
-                }
-                Label {
                     Toggle("Uptime", isOn: $show.uptime)
                 } icon: {
                     Image(systemName: "deskclock")
