@@ -90,53 +90,35 @@ func makeChannelMap(
 }
 
 private class FastAudioMeasurement {
-    private var nSamples: Int = 0
-    private var curPeak: Float = 0.0
-    private var squaresum: Float = 0.0
-
-    private var fin_ms: Float = 0.0
-    private var fin_peak: Float = 0.0
+    private var currentPeak: Float = 0.0
+    private var finalPeak: Float = 0.0
 
     func input(samples: UnsafeMutablePointer<Float>, count: Int, time _: Double) {
         for index in 0 ..< count {
             let sample = abs(samples[index])
-            curPeak = max(curPeak, sample)
-            squaresum += sample * sample
+            currentPeak = max(currentPeak, sample)
         }
-        nSamples += count
     }
 
     func input(samples: UnsafeMutablePointer<Int16>, count: Int, time _: Double) {
         for index in 0 ..< count {
             let sample = abs(Float(samples[index]) / Float(Int16.max))
-            curPeak = max(curPeak, sample)
-            squaresum += sample * sample
+            currentPeak = max(currentPeak, sample)
         }
-        nSamples += count
     }
 
     func finalize() { // before displaying. can still use input afterwards
-        fin_peak = curPeak
-        fin_ms = nSamples != 0 ? squaresum / Float(nSamples) : 0.0
-        nSamples = 0
-        curPeak = 0
-        squaresum = 0
+        finalPeak = currentPeak
+        currentPeak = 0
     }
 
     func reset() {
-        nSamples = 0
-        curPeak = 0.0
-        squaresum = 0.0
-        fin_ms = 0.0
-        fin_peak = 0.0
-    }
-
-    func levelRMS() -> Float {
-        10 * log10(fin_ms)
+        currentPeak = 0.0
+        finalPeak = 0.0
     }
 
     func peak() -> Float {
-        20 * log10(fin_peak)
+        20 * log10(finalPeak)
     }
 }
 
