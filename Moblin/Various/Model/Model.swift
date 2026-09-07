@@ -554,6 +554,8 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     let vTuberStorage = VTuberStorage()
     let pngTuberStorage = PngTuberStorage()
     let reconnectTimer = SimpleTimer(queue: .main)
+    let connectionStatusSoundTimer = SimpleTimer(queue: .main)
+    var connectionStatusSoundTimerStarted = false
     var logId = 1
     private var serversSpeed: Int64 = 0
     var adsEndDate: Date?

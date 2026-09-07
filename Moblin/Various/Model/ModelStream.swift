@@ -135,6 +135,7 @@ extension Model {
         }
         stopNetStream()
         makeStreamEndedToast()
+        stopConnectionStatusSound()
         streamState = .disconnected
         if let streamingHistoryStream {
             streamingHistoryStream.stopTime = Date()
@@ -540,6 +541,7 @@ extension Model {
         streamStartTime = .now
         streamState = .connected
         updateStreamUptime(now: .now)
+        stopConnectionStatusSound()
     }
 
     private func playConnectionStatusSound() {
@@ -554,6 +556,21 @@ extension Model {
         connectionStatusSoundPlayer?.play()
     }
 
+    func startConnectionStatusSound() {
+        if !connectionStatusSoundTimerStarted {
+            playConnectionStatusSound()
+            connectionStatusSoundTimer.startPeriodic(interval: 3) {
+                self.playConnectionStatusSound()
+            }
+            connectionStatusSoundTimerStarted = true
+        }
+    }
+
+    func stopConnectionStatusSound() {
+        connectionStatusSoundTimer.stop()
+        connectionStatusSoundTimerStarted = false
+    }
+
     private func onDisconnected(reason: String) {
         guard streaming else {
             return
@@ -563,14 +580,8 @@ extension Model {
         if streamState == .connected {
             streamTotalBytes += UInt64(media.streamTotal())
             makeFffffToast(subTitle: subTitle)
-            if database.show.connectionStatusSound {
-                playConnectionStatusSound()
-            }
         } else if streamState == .connecting {
             makeConnectFailureToast(subTitle: subTitle)
-            if database.show.connectionStatusSound {
-                playConnectionStatusSound()
-            }
         }
         streamState = .disconnected
         stopNetStream()
@@ -578,6 +589,7 @@ extension Model {
             logger.info("stream: Reconnecting")
             self.startNetStream()
         }
+        startConnectionStatusSound()
     }
 
     private func handleSrtConnected() {
