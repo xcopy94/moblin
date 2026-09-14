@@ -5,7 +5,13 @@ private struct SceneItemView: View {
     @ObservedObject var database: Database
     @ObservedObject var scene: SettingsScene
 
-    private func deleteItem() {
+    private func duplicate() {
+        let clone = scene.clone()
+        clone.name = makeUniqueName(name: scene.name, existingNames: database.scenes)
+        database.scenes.append(clone)
+    }
+
+    private func delete() {
         let deletedCurrentScene = model.getSelectedScene() === scene
         database.scenes.removeAll { $0 === scene }
         if deletedCurrentScene {
@@ -31,19 +37,19 @@ private struct SceneItemView: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             SwipeLeftToDeleteButtonView {
-                deleteItem()
+                delete()
             }
             SwipeLeftToDuplicateButtonView {
-                database.scenes.append(scene.clone())
+                duplicate()
             }
         }
         .contextMenu {
             if isMac() {
                 ContextMenuDuplicateButtonView {
-                    database.scenes.append(scene.clone())
+                    duplicate()
                 }
                 ContextMenuDeleteButtonView {
-                    deleteItem()
+                    delete()
                 }
             }
         }
@@ -150,6 +156,55 @@ private struct RemoteSceneView: View {
     }
 }
 
+private struct GraphicsView: View {
+    @EnvironmentObject var model: Model
+    @ObservedObject var database: Database
+
+    var body: some View {
+        NavigationLink {
+            Form {
+                Section {
+                    Picker(selection: $database.graphicsImplementation) {
+                        ForEach(SettingsGraphicsImplementation.allCases, id: \.self) { implementation in
+                            Text(implementation.toString())
+                        }
+                    } label: {
+                        Text("Implementation")
+                    }
+                    .onChange(of: database.graphicsImplementation) { _ in
+                        model.setGraphicsImplementation()
+                    }
+                    if database.graphicsImplementation == .metalPetal {
+                        Text("⚠️ MetalPetal does not work when Moblin is in background.")
+                    }
+                } footer: {
+                    Text("""
+                    Core Image is Apple's image processing framework. MetalPetal is experimental. \
+                    MetalPetal provides similar image processing, and hopefully uses less system \
+                    resources.
+                    """)
+                }
+                if database.graphicsImplementation == .coreImage {
+                    Section {
+                        Toggle("High quality downsampling", isOn: $database.graphicsHighQualityDownsampling)
+                            .onChange(of: database.graphicsHighQualityDownsampling) { _ in
+                                model.setHighQualityDownsampling()
+                            }
+                    } footer: {
+                        Text("""
+                        High quality downsampling makes downscaled images look better, but uses \
+                        more system resources.
+                        """)
+                    }
+                }
+            }
+            .navigationTitle("Graphics")
+        } label: {
+            Text("Graphics")
+        }
+    }
+}
+
 struct SceneNameView: View {
     @ObservedObject var scene: SettingsScene
 
@@ -171,6 +226,7 @@ struct ScenesSettingsView: View {
                 DisconnectProtectionSettingsView(database: database,
                                                  disconnectProtection: database.disconnectProtection)
                 RemoteSceneView(selectedSceneId: database.remoteSceneId)
+                GraphicsView(database: database)
             }
         }
         .navigationTitle("Scenes")

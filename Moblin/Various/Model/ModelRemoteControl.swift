@@ -14,12 +14,16 @@ class RemoteControl: ObservableObject {
     @Published var bitrate = UUID()
     @Published var zoom = ""
     @Published var zoomPresets: [RemoteControlZoomPreset] = []
+    @Published var gimbalPresets: [RemoteControlSettingsGimbalPreset] = []
+    @Published var macros: [RemoteControlMacro] = []
     @Published var zoomPreset = UUID()
     @Published var debugLogging = false
     @Published var preview: UIImage?
     @Published var recording: Bool = false
     @Published var streaming: Bool = false
     @Published var muted: Bool = false
+    @Published var stealthMode: Bool = false
+    @Published var previewStream: Bool = false
     @Published var presentingPreview = true
     @Published var presentingPreviewFullScreen = false
     @Published var presentingStreamers = false
@@ -48,11 +52,11 @@ enum RemoteControlAssistantPreviewUser {
 
 extension Model {
     func isShowingStatusRemoteControl() -> Bool {
-        return database.show.remoteControl && isAnyRemoteControlConfigured()
+        database.show.remoteControl && isAnyRemoteControlConfigured()
     }
 
     private func isAnyRemoteControlConfigured() -> Bool {
-        return isRemoteControlStreamerConfigured() || isRemoteControlAssistantConfigured()
+        isRemoteControlStreamerConfigured() || isRemoteControlAssistantConfigured()
     }
 
     func clearRemoteControlAssistantLog() {
@@ -90,12 +94,16 @@ extension Model {
 
     func updateRemoteControlStatus() {
         let status: String
+        let ok: Bool
         if isRemoteControlAssistantConnected(), isRemoteControlStreamerConnected() {
             status = String(localized: "Assistant and streamer")
+            ok = true
         } else if isRemoteControlAssistantConnected() {
             status = String(localized: "Assistant")
+            ok = true
         } else if isRemoteControlStreamerConnected() {
             status = String(localized: "Streamer")
+            ok = true
         } else {
             let assistantError = remoteControlAssistant?.connectionErrorMessage ?? ""
             let streamerError = remoteControlStreamer?.connectionErrorMessage ?? ""
@@ -108,9 +116,13 @@ extension Model {
             } else {
                 status = noValue
             }
+            ok = false
         }
         if status != statusTopRight.remoteControlStatus {
             statusTopRight.remoteControlStatus = status
+        }
+        if ok != statusTopRight.remoteControlOk {
+            statusTopRight.remoteControlOk = ok
         }
     }
 
@@ -120,7 +132,7 @@ extension Model {
     }
 
     func isRemoteControlStreamerConnected() -> Bool {
-        return remoteControlStreamer?.isConnected() ?? false
+        remoteControlStreamer?.isConnected() ?? false
     }
 
     func stopRemoteControlAssistant() {
@@ -142,7 +154,7 @@ extension Model {
     }
 
     func isRemoteControlAssistantConnected() -> Bool {
-        return remoteControlAssistant?.isConnected() ?? false
+        remoteControlAssistant?.isConnected() ?? false
     }
 
     func updateRemoteControlAssistantStatus() {
@@ -177,15 +189,17 @@ extension Model {
     }
 
     private func shouldSendRemoteScene() -> Bool {
-        return database.remoteSceneId != nil && remoteControlAssistant?.isConnected() == true
+        database.remoteSceneId != nil && remoteControlAssistant?.isConnected() == true
     }
 
-    func remoteControlAssistantSetRemoteSceneDataTextStats(stats: TextEffectStats) {
+    func remoteControlAssistantSetRemoteSceneDataVariables(variables: Variables) {
         guard shouldSendRemoteScene() else {
             return
         }
         let data =
-            RemoteControlRemoteSceneData(textStats: RemoteControlRemoteSceneDataTextStats(stats: stats))
+            RemoteControlRemoteSceneData(
+                textStats: RemoteControlRemoteSceneDataVariables(variables: variables)
+            )
         remoteControlAssistant?.setRemoteSceneData(data: data) {}
     }
 
@@ -198,8 +212,8 @@ extension Model {
         remoteControlAssistant?.setRemoteSceneData(data: data) {}
     }
 
-    func remoteControlAssistantSetStream(on: Bool) {
-        remoteControlAssistant?.setStream(on: on) {
+    func remoteControlAssistantSetLive(on: Bool) {
+        remoteControlAssistant?.setLive(on: on) {
             DispatchQueue.main.async {
                 self.updateRemoteControlAssistantStatus()
             }
@@ -216,6 +230,18 @@ extension Model {
 
     func remoteControlAssistantSetMute(on: Bool) {
         remoteControlAssistant?.setMute(on: on) {
+            DispatchQueue.main.async {
+                self.updateRemoteControlAssistantStatus()
+            }
+        }
+    }
+
+    func remoteControlAssistantSetStealthMode(on: Bool) {
+        remoteControlAssistant?.setStealthMode(on: on) {}
+    }
+
+    func remoteControlAssistantSetPreviewStream(on: Bool) {
+        remoteControlAssistant?.setPreviewStream(on: on) {
             DispatchQueue.main.async {
                 self.updateRemoteControlAssistantStatus()
             }
@@ -292,8 +318,20 @@ extension Model {
         remoteControlAssistant?.moveToGimbalPreset(id: id) {}
     }
 
+    func remoteControlAssistantStartMacro(id: UUID) {
+        remoteControlAssistant?.startMacro(id: id) {}
+    }
+
+    func remoteControlAssistantStopMacro(id: UUID) {
+        remoteControlAssistant?.stopMacro(id: id) {}
+    }
+
     func remoteControlAssistantSetFilter(filter: RemoteControlFilter, on: Bool) {
         remoteControlAssistant?.setFilter(filter: filter, on: on)
+    }
+
+    func remoteControlAssistantSendMessage(text: String) {
+        remoteControlAssistant?.sendMessage(text: text)
     }
 
     func remoteControlAssistantStartPreview(user: RemoteControlAssistantPreviewUser) {
@@ -316,6 +354,14 @@ extension Model {
     func remoteControlAssistantStopStatus() {
         remoteControlAssistantStatusRequested = false
         remoteControlAssistant?.stopStatus()
+    }
+
+    func remoteControlAssistantStartStats(filter: RemoteControlStartStatsFilter? = nil) {
+        remoteControlAssistant?.startStats(filter: filter)
+    }
+
+    func remoteControlAssistantStopStats() {
+        remoteControlAssistant?.stopStats()
     }
 
     func reloadRemoteControlRelay() {
@@ -356,6 +402,19 @@ extension Model {
             topRight = remoteControlStreamerCreateStatusTopRight()
         }
         return (general, topLeft, topRight)
+    }
+
+    func isRemoteControlStreamerGeographyStatsFilterEnabled() -> Bool {
+        isRemoteControlAssistantRequestingStats && remoteControlAssistantRequestingStatsFilter
+            .geography == true
+    }
+
+    func isRemoteControlStreamerWeatherStatsFilterEnabled() -> Bool {
+        isRemoteControlAssistantRequestingStats && remoteControlAssistantRequestingStatsFilter.weather == true
+    }
+
+    func isRemoteControlStreamerGForceStatsFilterEnabled() -> Bool {
+        isRemoteControlAssistantRequestingStats && remoteControlAssistantRequestingStatsFilter.gForce == true
     }
 
     private func remoteControlStreamerCreateStatusGeneral() -> RemoteControlStatusGeneral {
@@ -400,7 +459,7 @@ extension Model {
         if isChatConfigured() {
             topLeft.chat = RemoteControlStatusItem(message: statusTopLeft.statusChatText)
         }
-        if isViewersConfigured() && isLive {
+        if isViewersConfigured(), isLive {
             topLeft.viewers = RemoteControlStatusItem(message: statusViewersText())
         }
         return topLeft
@@ -478,10 +537,58 @@ extension Model {
         remoteControlStreamer?.sendStatus(general: general, topLeft: topLeft, topRight: topRight)
     }
 
+    func sendPeriodicRemoteControlStreamerStats(now: Date) {
+        guard isRemoteControlAssistantRequestingStats else {
+            return
+        }
+        let location = locationManager.getLatestKnownLocation()
+        let weather = weatherManager.getLatestWeather()?.currentWeather
+        let placemark = geographyManager.getLatestPlacemark()
+        remoteControlStreamer?.sendStats(data: RemoteControlStats(
+            date: now,
+            timeZone: TimeZone.current.identifier,
+            speed: location?.speed ?? 0,
+            averageSpeed: averageSpeed,
+            altitude: location?.altitude ?? 0,
+            latitude: location?.coordinate.latitude,
+            longitude: location?.coordinate.longitude,
+            distance: database.location.distance,
+            splitDistance: database.location.splitDistance,
+            slopePercent: slopePercent,
+            altitudeAscent: database.location.altitudeAscent,
+            altitudeDescent: database.location.altitudeDescent,
+            splitAltitudeAscent: database.location.splitAltitudeAscent,
+            splitAltitudeDescent: database.location.splitAltitudeDescent,
+            temperature: weather?.temperature.converted(to: .celsius).value,
+            feelsLikeTemperature: weather?.apparentTemperature.converted(to: .celsius).value,
+            windSpeed: weather?.wind.speed.converted(to: .metersPerSecond).value,
+            windGust: weather?.wind.gust?.converted(to: .metersPerSecond).value,
+            country: placemark?.country,
+            countryFlag: emojiFlag(countryCode: placemark?.isoCountryCode),
+            state: placemark?.administrativeArea,
+            area: placemark?.subAdministrativeArea,
+            city: placemark?.locality,
+            neighborhood: placemark?.subLocality,
+            heartRates: heartRates,
+            activeEnergyBurned: workoutActiveEnergyBurned,
+            workoutDistance: workoutDistance,
+            power: workoutPower,
+            stepCount: workoutStepCount,
+            cyclingPower: cyclingPower,
+            cyclingCadence: cyclingCadence,
+            cyclingSpeed: cyclingSpeed,
+            gForce: gForceManager?.getLatest()
+        ))
+    }
+
     func isRemoteControlStreamerPreviewActive() -> Bool {
-        return isRemoteControlStreamerConnected()
+        isRemoteControlStreamerConnected()
             && isRemoteControlAssistantRequestingPreview
             && database.remoteControl.streamer.previewFps > 0
+    }
+
+    func isRemoteControlWebPreviewActive() -> Bool {
+        isRemoteControlWebRequestingPreview
     }
 
     private func createRemoteControlStateChanged() -> RemoteControlAssistantStreamerState {
@@ -510,12 +617,17 @@ extension Model {
         state.streaming = isLive
         state.recording = isRecording
         state.muted = isMuteOn
+        state.stealthMode = showStealthMode
+        state.previewStream = isPreviewStreaming
         state.torchOn = streamOverlay.isTorchOn
         state.batteryCharging = isBatteryCharging()
         state.filters = [:]
         for filter in RemoteControlFilter.allCases {
-            state.filters?[filter] = getQuickButtonState(type: filter.toSettings())?.isOn ?? false
+            state.filters?[filter] = getQuickButton(type: filter.toSettings())?.isOn ?? false
         }
+        state.gimbalTracking = database.gimbal.tracking
+        state.gimbalPresets = getRemoteControlGimbalPresets()
+        state.macros = getRemoteControlMacros()
         return state
     }
 
@@ -586,12 +698,15 @@ extension Model {
         guard #available(iOS 17, *) else {
             return
         }
-        triggerReaction(reaction: reaction.toSystem())
+        triggerReaction(reaction: reaction.toSettings())
     }
 
     private func handleGetSettings() -> RemoteControlSettings {
         let scenes = enabledScenes.map {
             RemoteControlSettingsScene(id: $0.id, name: $0.name)
+        }
+        let streams = database.streams.map {
+            RemoteControlSettingsStream(id: $0.id, name: $0.name)
         }
         let autoSceneSwitchers = database.autoSceneSwitchers.switchers.map {
             RemoteControlSettingsAutoSceneSwitcher(id: $0.id, name: $0.name)
@@ -612,10 +727,8 @@ extension Model {
                 )
             }
         let connectionPrioritiesEnabled = stream.srt.connectionPriorities.enabled
-        let gimbalPresets = database.gimbal.presets.map {
-            RemoteControlSettingsGimbalPreset(id: $0.id, name: $0.name)
-        }
         return RemoteControlSettings(
+            streams: streams,
             scenes: scenes,
             autoSceneSwitchers: autoSceneSwitchers,
             bitratePresets: bitratePresets,
@@ -623,13 +736,12 @@ extension Model {
             srt: RemoteControlSettingsSrt(
                 connectionPrioritiesEnabled: connectionPrioritiesEnabled,
                 connectionPriorities: connectionPriorities
-            ),
-            gimbalPresets: gimbalPresets
+            )
         )
     }
 }
 
-extension Model: RemoteControlStreamerDelegate {
+extension Model: @preconcurrency RemoteControlStreamerDelegate {
     func remoteControlStreamerConnected() {
         useRemoteControlForChatAndEvents = database.remoteControl.streamer.reliableChatAndEvents
         let subTitle: String?
@@ -644,6 +756,7 @@ extension Model: RemoteControlStreamerDelegate {
         makeToast(title: String(localized: "Remote control assistant connected"), subTitle: subTitle)
         isRemoteControlAssistantRequestingPreview = false
         isRemoteControlAssistantRequestingStatus = false
+        remoteControlStreamerStopStats()
         setLowFpsImage()
         updateRemoteControlStatus()
         remoteControlStateChanged(state: createRemoteControlStateChanged())
@@ -651,9 +764,16 @@ extension Model: RemoteControlStreamerDelegate {
 
     func remoteControlStreamerDisconnected() {
         makeToast(title: String(localized: "Remote control assistant disconnected"))
+        setGimbalMovement(x: 0, y: 0)
         isRemoteControlAssistantRequestingPreview = false
         isRemoteControlAssistantRequestingStatus = false
+        remoteControlStreamerStopStats()
         setLowFpsImage()
+        updateRemoteControlStatus()
+    }
+
+    func remoteControlStreamerWrongPassword() {
+        makeErrorToast(title: String(localized: "Remote control assistant rejected the password"))
         updateRemoteControlStatus()
     }
 
@@ -665,7 +785,18 @@ extension Model: RemoteControlStreamerDelegate {
     }
 
     func remoteControlStreamerGetSettings() -> RemoteControlSettings {
-        return handleGetSettings()
+        handleGetSettings()
+    }
+
+    func remoteControlStreamerSetStream(id: UUID) {
+        guard let stream = findStream(id: id) else {
+            return
+        }
+        guard !stream.enabled, !isLive, !isRecording else {
+            return
+        }
+        setCurrentStream(stream: stream)
+        reloadStreamIfEnabled(stream: stream)
     }
 
     func remoteControlStreamerSetScene(id: UUID) {
@@ -673,12 +804,15 @@ extension Model: RemoteControlStreamerDelegate {
     }
 
     func remoteControlStreamerSetAutoSceneSwitcher(id: UUID?) {
-        autoSceneSwitcher.currentSwitcherId = id
         setAutoSceneSwitcher(id: id)
     }
 
     func remoteControlStreamerSetMic(id: String) {
         manualSelectMicById(id: id)
+    }
+
+    func remoteControlStreamerSetTalkbackMic(id: String) {
+        setTalkbackMic(id: id)
     }
 
     func remoteControlStreamerSetBitratePreset(id: UUID) {
@@ -696,16 +830,22 @@ extension Model: RemoteControlStreamerDelegate {
         } else {
             stopRecording()
         }
-        updateQuickButtonStates()
     }
 
-    func remoteControlStreamerSetStream(on: Bool) {
+    func remoteControlStreamerSetLive(on: Bool) {
         if on {
             startStream()
         } else {
             _ = stopStream()
         }
-        updateQuickButtonStates()
+    }
+
+    func remoteControlStreamerSetPreviewStream(on: Bool) {
+        if on {
+            startPreviewStream()
+        } else {
+            stopPreviewStream()
+        }
     }
 
     func remoteControlStreamerSetDebugLogging(on: Bool) {
@@ -725,11 +865,14 @@ extension Model: RemoteControlStreamerDelegate {
         setMuteOn(value: on)
     }
 
+    func remoteControlStreamerSetStealthMode(on: Bool) {
+        setStealthMode(on: on)
+    }
+
     func remoteControlStreamerSetTorch(on: Bool) {
         streamOverlay.isTorchOn = on
         updateTorch()
         toggleQuickButton(type: .torch)
-        updateQuickButtonStates()
     }
 
     func remoteControlStreamerReloadBrowserWidgets() {
@@ -760,6 +903,13 @@ extension Model: RemoteControlStreamerDelegate {
         remoteControlStreamer?.sendPreview(preview: preview)
     }
 
+    func sendPreviewToRemoteControlWeb(preview: Data) {
+        guard isRemoteControlWebPreviewActive() else {
+            return
+        }
+        remoteControlWeb?.sendPreview(preview: preview)
+    }
+
     func remoteControlStreamerTwitchEventSubNotification(message: String) {
         twitchEventSub?.handleMessage(messageText: message)
     }
@@ -782,10 +932,31 @@ extension Model: RemoteControlStreamerDelegate {
                               isModerator: message.isModerator,
                               isOwner: message.isOwner,
                               bits: message.bits,
-                              highlight: nil,
+                              highlight: message.highlight.map { ChatHighlight(remoteControl: $0) },
                               live: live)
             remoteControlStreamerLatestReceivedChatMessageId = message.id
         }
+    }
+
+    func remoteControlStreamerSendMessage(text: String) {
+        let user = String(localized: "Mom")
+        appendChatMessage(platform: nil,
+                          messageId: nil,
+                          displayName: user,
+                          user: user,
+                          userId: nil,
+                          userColor: RgbColor(red: 0x2F, green: 0xF5, blue: 0x2C),
+                          userBadges: [],
+                          segments: makeChatPostTextSegments(text: text),
+                          timestamp: statusOther.digitalClock,
+                          timestampTime: .now,
+                          isAction: false,
+                          isSubscriber: false,
+                          isModerator: false,
+                          isOwner: false,
+                          bits: nil,
+                          highlight: ChatHighlight.makeRemoteControlAssistant(),
+                          live: true)
     }
 
     func remoteControlStreamerStartPreview() {
@@ -848,8 +1019,32 @@ extension Model: RemoteControlStreamerDelegate {
         remoteControlAssistantRequestingStatusFilter = nil
     }
 
+    func remoteControlStreamerStartStats(filter: RemoteControlStartStatsFilter?) {
+        isRemoteControlAssistantRequestingStats = true
+        remoteControlAssistantRequestingStatsFilter = filter ?? remoteControlStartStatsFilterAllEnabled
+        startWeatherManager()
+        startGeographyManager()
+        startGForceManager()
+    }
+
+    func remoteControlStreamerStopStats() {
+        isRemoteControlAssistantRequestingStats = false
+        remoteControlAssistantRequestingStatsFilter = RemoteControlStartStatsFilter()
+        startWeatherManager()
+        startGeographyManager()
+        startGForceManager()
+    }
+
+    func remoteControlStreamerStartMacro(id: UUID) {
+        startMacro(id: id)
+    }
+
+    func remoteControlStreamerStopMacro(id: UUID) {
+        stopMacro(id: id)
+    }
+
     func remoteControlStreamerGetScoreboardSports() -> [String] {
-        return getScoreboardSports()
+        getScoreboardSports()
     }
 
     func remoteControlStreamerSetScoreboardSport(sportId: String) {
@@ -891,12 +1086,10 @@ extension Model: RemoteControlStreamerDelegate {
                 return
             }
             whipServer.startClient(streamKey: String(streamKey), sdpOffer: sdpOffer) { sdpAnswer in
-                DispatchQueue.main.async {
-                    if let sdpAnswer {
-                        onCompleted(200, [], sdpAnswer.utf8Data)
-                    } else {
-                        onCompleted(400, [], Data())
-                    }
+                if let sdpAnswer {
+                    onCompleted(200, [], sdpAnswer.utf8Data)
+                } else {
+                    onCompleted(400, [], Data())
                 }
             }
         case "DELETE":
@@ -917,9 +1110,35 @@ extension Model: RemoteControlStreamerDelegate {
     func remoteControlStreamerMoveToGimbalPreset(id: UUID) {
         moveToGimbalPreset(id: id)
     }
+
+    func remoteControlStreamerSetGimbalTracking(on: Bool) {
+        setGimbalTracking(on: on)
+    }
+
+    func remoteControlStreamerSetGimbalMovement(x: Float, y: Float) {
+        setGimbalMovement(x: x, y: y)
+    }
+
+    func remoteControlStreamerAnimateGimbal(motion: SettingsGimbalMotion) {
+        animateGimbal(motion: motion)
+    }
+
+    func remoteControlStreamerSaveGimbalPreset() {
+        saveGimbalPreset(id: nil)
+    }
+
+    func remoteControlStreamerImportSettings(settings: Data, onCompleted: @escaping (Bool) -> Void) {
+        guard !isLive, !isRecording else {
+            onCompleted(false)
+            return
+        }
+        importSettingsFromData(settings: settings) {
+            onCompleted($0)
+        }
+    }
 }
 
-extension Model: RemoteControlAssistantDelegate {
+extension Model: @preconcurrency RemoteControlAssistantDelegate {
     func remoteControlAssistantConnected() {
         makeToast(title: String(localized: "Remote control streamer connected"))
         remoteControlAssistantStreamerState.filters = [:]
@@ -962,6 +1181,14 @@ extension Model: RemoteControlAssistantDelegate {
             remoteControlAssistantStreamerState.zoomPresets = zoomPresets
             remoteControl.zoomPresets = zoomPresets
         }
+        if let gimbalPresets = state.gimbalPresets {
+            remoteControlAssistantStreamerState.gimbalPresets = gimbalPresets
+            remoteControl.gimbalPresets = gimbalPresets
+        }
+        if let macros = state.macros {
+            remoteControlAssistantStreamerState.macros = macros
+            remoteControl.macros = macros
+        }
         if let zoomPreset = state.zoomPreset {
             remoteControlAssistantStreamerState.zoomPreset = zoomPreset
             remoteControl.zoomPreset = zoomPreset
@@ -985,6 +1212,14 @@ extension Model: RemoteControlAssistantDelegate {
         if let muted = state.muted {
             remoteControlAssistantStreamerState.muted = muted
             remoteControl.muted = muted
+        }
+        if let stealthMode = state.stealthMode {
+            remoteControlAssistantStreamerState.stealthMode = stealthMode
+            remoteControl.stealthMode = stealthMode
+        }
+        if let previewStream = state.previewStream {
+            remoteControlAssistantStreamerState.previewStream = previewStream
+            remoteControl.previewStream = previewStream
         }
         if let filters = state.filters {
             for (filter, on) in filters {
@@ -1053,11 +1288,18 @@ extension Model: RemoteControlAssistantDelegate {
             remoteControl.topRight = topRight
         }
     }
+
+    func remoteControlAssistantStats(data _: RemoteControlStats) {}
 }
 
-extension Model: RemoteControlWebDelegate {
+extension Model: @preconcurrency RemoteControlWebDelegate {
+    func remoteControlWebDisconnected() {
+        setGimbalMovement(x: 0, y: 0)
+    }
+
     func remoteControlWebConnected() {
         remoteControlWeb?.stateChanged(state: createRemoteControlStateChanged())
+        remoteControlWeb?.sendGolfScoreboardUpdate(data: getGolfScoreboardForRemoteControl())
         let scoreboard = getEnabledScoreboardWidgetsInSelectedScene().first?.scoreboard
         remoteControlWeb?.sendScoreboardUpdate(config: getModularScoreboardConfig(scoreboard: scoreboard))
     }
@@ -1065,11 +1307,11 @@ extension Model: RemoteControlWebDelegate {
     func remoteControlWebGetStatus()
         -> (RemoteControlStatusGeneral, RemoteControlStatusTopLeft, RemoteControlStatusTopRight)
     {
-        return remoteControlStreamerGetStatus()
+        remoteControlStreamerGetStatus()
     }
 
     func remoteControlWebGetSettings() -> RemoteControlSettings {
-        return handleGetSettings()
+        handleGetSettings()
     }
 
     func remoteControlWebSetScene(id: UUID) {
@@ -1092,8 +1334,12 @@ extension Model: RemoteControlWebDelegate {
         remoteControlStreamerSetRecord(on: on)
     }
 
-    func remoteControlWebSetStream(on: Bool) {
-        remoteControlStreamerSetStream(on: on)
+    func remoteControlWebSetLive(on: Bool) {
+        remoteControlStreamerSetLive(on: on)
+    }
+
+    func remoteControlWebSetPreviewStream(on: Bool) {
+        remoteControlStreamerSetPreviewStream(on: on)
     }
 
     func remoteControlWebSetZoom(x: Float) {
@@ -1110,6 +1356,10 @@ extension Model: RemoteControlWebDelegate {
 
     func remoteControlWebSetMute(on: Bool) {
         remoteControlStreamerSetMute(on: on)
+    }
+
+    func remoteControlWebSetStealthMode(on: Bool) {
+        remoteControlStreamerSetStealthMode(on: on)
     }
 
     func remoteControlWebSetTorch(on: Bool) {
@@ -1132,8 +1382,24 @@ extension Model: RemoteControlWebDelegate {
         remoteControlStreamerMoveToGimbalPreset(id: id)
     }
 
+    func remoteControlWebSetGimbalTracking(on: Bool) {
+        remoteControlStreamerSetGimbalTracking(on: on)
+    }
+
+    func remoteControlWebSetGimbalMovement(x: Float, y: Float) {
+        remoteControlStreamerSetGimbalMovement(x: x, y: y)
+    }
+
+    func remoteControlWebAnimateGimbal(motion: SettingsGimbalMotion) {
+        remoteControlStreamerAnimateGimbal(motion: motion)
+    }
+
+    func remoteControlWebSaveGimbalPreset() {
+        remoteControlStreamerSaveGimbalPreset()
+    }
+
     func remoteControlWebGetScoreboardSports() -> [String] {
-        return getScoreboardSports()
+        getScoreboardSports()
     }
 
     func remoteControlWebSetScoreboardSport(sportId: String) {
@@ -1154,6 +1420,14 @@ extension Model: RemoteControlWebDelegate {
 
     func remoteControlWebSetScoreboardClock(time: String) {
         handleScoreboardSetClockManual(time: time)
+    }
+
+    func remoteControlWebGetGolfScoreboard() -> RemoteControlGolfScoreboard {
+        getGolfScoreboardForRemoteControl()
+    }
+
+    func remoteControlWebUpdateGolfScoreboard(data: RemoteControlGolfScoreboard) {
+        handleExternalGolfScoreboardUpdate(remoteScorecard: data)
     }
 
     func remoteControlWebSetFilter(filter: RemoteControlFilter, on: Bool) {
@@ -1211,5 +1485,15 @@ extension Model: RemoteControlWebDelegate {
         let url = recordingsStorage.defaultStorageDirectory().appending(component: filename)
         try? FileManager.default.removeItem(at: url)
         recordingThumbnailsCache.removeValue(forKey: filename)
+    }
+
+    func remoteControlWebStartPreview() {
+        isRemoteControlWebRequestingPreview = true
+        setLowFpsImage()
+    }
+
+    func remoteControlWebStopPreview() {
+        isRemoteControlWebRequestingPreview = false
+        setLowFpsImage()
     }
 }

@@ -1,7 +1,7 @@
 import Foundation
 import VideoToolbox
 
-var videoEncoderDataRateLimitFactor = 1.2
+nonisolated(unsafe) var videoEncoderDataRateLimitFactor = 1.2
 
 func createDataRateLimits(bitRate: UInt32) -> CFArray {
     var bitRate = Double(bitRate)
@@ -23,9 +23,9 @@ struct VideoEncoderSettings {
         var codecType: UInt32 {
             switch self {
             case .h264:
-                return kCMVideoCodecType_H264
+                kCMVideoCodecType_H264
             case .hevc:
-                return kCMVideoCodecType_HEVC
+                kCMVideoCodecType_HEVC
             }
         }
     }
@@ -78,7 +78,7 @@ struct VideoEncoderSettings {
     }
 
     func shouldInvalidateSession(_ other: VideoEncoderSettings) -> Bool {
-        return !(videoSize == other.videoSize &&
+        !(videoSize == other.videoSize &&
             maxKeyFrameIntervalDuration == other.maxKeyFrameIntervalDuration &&
             allowFrameReordering == other.allowFrameReordering &&
             profileLevel == other.profileLevel &&
@@ -95,17 +95,7 @@ struct VideoEncoderSettings {
             .init(key: .allowFrameReordering, value: allowFrameReordering as NSObject),
             .init(key: .pixelTransferProperties, value: ["ScalingMode": "Trim"] as NSObject),
         ]
-        switch rateControl {
-        case .abr:
-            properties.append(.init(key: .averageBitRate, value: bitrate as CFNumber))
-            properties.append(.init(key: .dataRateLimits, value: createDataRateLimits(bitRate: bitrate)))
-        case .cbr:
-            properties.append(.init(key: .constantBitRate, value: bitrate as CFNumber))
-        case .vbr:
-            if #available(iOS 26, *) {
-                properties.append(.init(key: .variableBitRate, value: bitrate as CFNumber))
-            }
-        }
+        properties += bitrateProperties(bitrate: bitrate)
         if profileLevel.contains("Main10") {
             properties += [
                 .init(key: .hdrMetadataInsertionMode, value: kVTHDRMetadataInsertionMode_Auto),
@@ -118,5 +108,23 @@ struct VideoEncoderSettings {
             properties.append(.init(key: .h264EntropyMode, value: kVTH264EntropyMode_CABAC))
         }
         return properties
+    }
+
+    func bitrateProperties(bitrate: UInt32) -> [VTSessionProperty] {
+        switch rateControl {
+        case .abr:
+            [
+                .init(key: .averageBitRate, value: bitrate as CFNumber),
+                .init(key: .dataRateLimits, value: createDataRateLimits(bitRate: bitrate)),
+            ]
+        case .cbr:
+            [.init(key: .constantBitRate, value: bitrate as CFNumber)]
+        case .vbr:
+            if #available(iOS 26, *) {
+                [.init(key: .variableBitRate, value: bitrate as CFNumber)]
+            } else {
+                []
+            }
+        }
     }
 }

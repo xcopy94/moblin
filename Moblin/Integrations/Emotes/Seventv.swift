@@ -2,7 +2,7 @@ import Foundation
 
 private struct SeventvFile: Codable {
     var name: String
-    // var size: Int64
+    var static_name: String?
 }
 
 private struct SeventvHost: Codable {
@@ -37,12 +37,12 @@ func fetchSeventvEmotes(platform: EmotesPlatform,
     var message: String?
     var emotes: [String: Emote] = [:]
     do {
-        emotes = try emotes.merging(await fetchGlobalEmotes()) { $1 }
+        emotes = try await emotes.merging(fetchGlobalEmotes()) { $1 }
     } catch {
         message = String(localized: "Failed to get 7TV global emotes")
     }
     do {
-        emotes = try emotes.merging(await fetchChannelEmotes(
+        emotes = try await emotes.merging(fetchChannelEmotes(
             platform: platform,
             channelId: channelId
         )) { $1 }
@@ -72,30 +72,32 @@ private func fetchGlobalEmotes() async throws -> [String: Emote] {
     }
     var fetchedEmotes: [String: Emote] = [:]
     for emote in emotes {
-        guard let url = makeUrl(data: emote.data) else {
+        guard let fetchedEmote = makeEmote(data: emote.data) else {
             logger.info("emotes: Failed to create URL for 7TV emote \(emote.name)")
             continue
         }
-        fetchedEmotes[emote.name] = Emote(url: url)
+        fetchedEmotes[emote.name] = fetchedEmote
     }
     return fetchedEmotes
 }
 
-private func getWebpName(files: [SeventvFile]) -> String? {
+private func getWebpFile(files: [SeventvFile]) -> SeventvFile? {
     for file in files where file.name.hasSuffix(".webp") {
-        return file.name
+        return file
     }
     return nil
 }
 
-private func makeUrl(data: SeventvEmoteData) -> URL? {
-    guard let name = getWebpName(files: data.host.files) else {
+private func makeEmote(data: SeventvEmoteData) -> Emote? {
+    guard let file = getWebpFile(files: data.host.files) else {
         return nil
     }
-    guard let url = URL(string: "https:\(data.host.url)/\(name)") else {
+    guard let url = URL(string: "https:\(data.host.url)/\(file.name)") else {
         return nil
     }
-    return url
+    return Emote(url: url, stillUrl: file.static_name.flatMap {
+        URL(string: "https:\(data.host.url)/\($0)")
+    })
 }
 
 private func fetchChannelEmotes(platform: EmotesPlatform,
@@ -132,11 +134,11 @@ private func fetchChannelEmotes(platform: EmotesPlatform,
     }
     var fetchedEmotes: [String: Emote] = [:]
     for emote in emotes {
-        guard let url = makeUrl(data: emote.data) else {
+        guard let fetchedEmote = makeEmote(data: emote.data) else {
             logger.info("emotes: \(platform): \(channelId): Failed to create URL for 7TV emote \(emote.name)")
             continue
         }
-        fetchedEmotes[emote.name] = Emote(url: url)
+        fetchedEmotes[emote.name] = fetchedEmote
     }
     return fetchedEmotes
 }

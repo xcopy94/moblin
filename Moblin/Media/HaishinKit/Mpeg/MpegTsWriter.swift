@@ -1,16 +1,11 @@
 import AVFoundation
 import TrueTime
 
-var payloadSize = 1316
+nonisolated(unsafe) var payloadSize = 1316
 
 protocol MpegTsWriterDelegate: AnyObject {
     func writer(_ writer: MpegTsWriter, doOutput data: Data, containsAudio: Bool)
     func writer(_ writer: MpegTsWriter, doOutputPointer pointer: UnsafeRawBufferPointer, count: Int)
-}
-
-struct MpegTsTimecode {
-    let clock: Date
-    let frame: UInt32
 }
 
 /// The MpegTsWriter class represents writes MPEG-2 transport stream data.
@@ -22,7 +17,7 @@ class MpegTsWriter {
     private static let audioStreamId: UInt8 = 192
     private static let videoStreamId: UInt8 = 224
     private static let segmentDuration = CMTime(seconds: 2)
-    weak var delegate: MpegTsWriterDelegate?
+    weak var delegate: (any MpegTsWriterDelegate)?
     private var isRunning = false
     private var audioContinuityCounter: UInt8 = 0
     private var videoContinuityCounter: UInt8 = 0
@@ -42,15 +37,11 @@ class MpegTsWriter {
     private var audioConfig: MpegTsAudioConfig?
     private var videoConfig: MpegTsVideoConfig?
     private var programClockReferenceTimestamp: CMTime?
-    private let timecodesEnabled: Bool
-    private var presentationTimeStampBase: Double?
-    private var previousDecodeTimeStamp: Double?
-    private var estimatedFrameDuration: Double = 0.033
-    private var offsetingFrames: Bool = false
+    private let timecodeGenerator: MpegTsTimecodeGenerator?
     private let newSrt: Bool
 
     init(timecodesEnabled: Bool, newSrt: Bool) {
-        self.timecodesEnabled = timecodesEnabled
+        timecodeGenerator = timecodesEnabled ? MpegTsTimecodeGenerator() : nil
         self.newSrt = newSrt
     }
 
@@ -74,8 +65,7 @@ class MpegTsWriter {
         videoDataOffset = 0
         videoData = [nil, nil]
         programClockReferenceTimestamp = nil
-        presentationTimeStampBase = nil
-        previousDecodeTimeStamp = nil
+        timecodeGenerator?.reset()
         isRunning = false
     }
 
@@ -90,7 +80,7 @@ class MpegTsWriter {
     }
 
     private func canWriteFor() -> Bool {
-        return (audioConfig != nil) && (videoConfig != nil)
+        (audioConfig != nil) && (videoConfig != nil)
     }
 
     private func encode(_ packetId: UInt16, _ packets: [MpegTsPacket]) -> Data {
@@ -336,21 +326,21 @@ class MpegTsWriter {
     private func makeAudioHeader(_ config: MpegTsAudioConfig, _ length: Int) -> Data {
         switch config.type {
         case .opus:
-            return makeAudioOpusHeader(length)
+            makeAudioOpusHeader(length)
         default:
-            return makeAudioAacHeader(config, length)
+            makeAudioAacHeader(config, length)
         }
     }
 
     private func makeAudioAacHeader(_ config: MpegTsAudioConfig, _ length: Int) -> Data {
-        return AdtsHeader.encode(type: config.type.rawValue,
-                                 frequency: config.frequency.rawValue,
-                                 channels: config.channel.rawValue,
-                                 length: length)
+        AdtsHeader.encode(type: config.type.rawValue,
+                          frequency: config.frequency.rawValue,
+                          channels: config.channel.rawValue,
+                          length: length)
     }
 
     private func makeAudioOpusHeader(_ length: Int) -> Data {
-        return OpusHeader.encode(length: length)
+        OpusHeader.encode(length: length)
     }
 }
 
@@ -433,7 +423,6 @@ extension MpegTsWriter: VideoEncoderDelegate {
         let decodeTimeStamp = CMTimeSubtract(sampleBuffer.decodeTimeStamp, decodeTimeStampOffset)
         let randomAccessIndicator = sampleBuffer.getIsSync()
         let bytes = UnsafeMutableRawPointer(buffer).bindMemory(to: UInt8.self, capacity: length)
-        updateTimecodeReference()
         let timecode = makeTimecode(sampleBuffer.presentationTimeStamp, decodeTimeStamp)
         let data: Data
         switch videoConfig {
@@ -522,46 +511,18 @@ extension MpegTsWriter: VideoEncoderDelegate {
         return data
     }
 
-    private func updateTimecodeReference() {
-        guard timecodesEnabled, presentationTimeStampBase == nil else {
-            return
-        }
-        guard let now = TrueTimeClient.sharedInstance.referenceTime?.now().timeIntervalSince1970 else {
-            // logger.info("timecode: Failed to get NTP time")
-            return
-        }
-        let presentationTimeStamp = currentPresentationTimeStamp().seconds
-        presentationTimeStampBase = now - presentationTimeStamp
-        logger.info("""
-        timecode: Updated base time - NTP: \(now) PTS: \(presentationTimeStamp) \
-        BASE: \(presentationTimeStampBase!)
-        """)
-    }
-
     private func makeTimecode(_ presentationTimeStamp: CMTime, _ decodeTimeStamp: CMTime) -> MpegTsTimecode? {
-        guard timecodesEnabled, let presentationTimeStampBase else {
+        guard let timecodeGenerator else {
             return nil
         }
-        let presentationTimeStamp = presentationTimeStamp.seconds
-        var decodeTimeStamp = decodeTimeStamp.seconds
-        if decodeTimeStamp.isNaN {
-            decodeTimeStamp = presentationTimeStamp
+        if !timecodeGenerator.hasReference() {
+            guard let now = TrueTimeClient.sharedInstance.referenceTime?.now().timeIntervalSince1970 else {
+                // logger.info("timecode: Failed to get NTP time")
+                return nil
+            }
+            timecodeGenerator.setReference(now: now,
+                                           presentationTimeStamp: currentPresentationTimeStamp().seconds)
         }
-        if let previousDecodeTimeStamp {
-            estimatedFrameDuration = 0.7 * estimatedFrameDuration + 0.3 *
-                (decodeTimeStamp - previousDecodeTimeStamp)
-        }
-        previousDecodeTimeStamp = decodeTimeStamp
-        let now = Date(timeIntervalSince1970: presentationTimeStampBase
-            + presentationTimeStamp
-            + (offsetingFrames ? estimatedFrameDuration / 2 : 0))
-        let offsetWithinSecond = now.timeIntervalSince1970.truncatingRemainder(dividingBy: 1)
-        let frame = offsetWithinSecond / estimatedFrameDuration
-        let offsetFromFrame = offsetWithinSecond - frame.rounded(.down) * estimatedFrameDuration
-        if offsetFromFrame < estimatedFrameDuration / 6 || offsetFromFrame > estimatedFrameDuration * 5 / 6 {
-            offsetingFrames.toggle()
-        }
-        // logger.info("timecode: now: \(now), frame: \(frame)")
-        return MpegTsTimecode(clock: now, frame: UInt32(frame))
+        return timecodeGenerator.makeTimecode(presentationTimeStamp, decodeTimeStamp)
     }
 }

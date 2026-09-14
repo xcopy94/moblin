@@ -7,14 +7,28 @@ extension Model {
         presentingSettingsImportConfirmation = true
     }
 
-    func importSettingsFromFile(url: URL, completion: @escaping () -> Void) {
+    func importSettingsFromFile(url: URL, completion: @escaping @MainActor (Bool) -> Void) {
         settings.importFromFile(url: url) {
             self.importDone(message: $0)
-            completion()
+            let succeeded = $0 == nil
+            DispatchQueue.main.async {
+                completion(succeeded)
+            }
         }
     }
 
-    func importSettingsFromClipboard(completion: @escaping () -> Void) {
+    func importSettingsFromData(settings: Data, completion: @escaping @MainActor (Bool) -> Void) {
+        let settingsUrl = FileManager.default.temporaryDirectory
+            .appendingPathComponent("data_import")
+            .appendingPathExtension("moblinSettings")
+        try? settings.write(to: settingsUrl)
+        importSettingsFromFile(url: settingsUrl) {
+            try? FileManager.default.removeItem(at: settingsUrl)
+            completion($0)
+        }
+    }
+
+    func importSettingsFromClipboard(completion: @escaping @MainActor () -> Void) {
         let typeIdentifier = moblinSettingsFileType.identifier
         if let provider = UIPasteboard.general.itemProviders
             .first(where: { $0.hasItemConformingToTypeIdentifier(typeIdentifier) })
@@ -26,12 +40,7 @@ extension Model {
                         completion()
                         return
                     }
-                    let settingsUrl = FileManager.default.temporaryDirectory
-                        .appendingPathComponent("clipboard_import")
-                        .appendingPathExtension("moblinSettings")
-                    try? settings.write(to: settingsUrl)
-                    self.importSettingsFromFile(url: settingsUrl) {
-                        try? FileManager.default.removeItem(at: settingsUrl)
+                    self.importSettingsFromData(settings: settings) { _ in
                         completion()
                     }
                 }
@@ -39,15 +48,19 @@ extension Model {
         } else if let settings = UIPasteboard.general.string {
             self.settings.importFromClipboard(settings: settings) {
                 self.importDone(message: $0)
-                completion()
+                DispatchQueue.main.async {
+                    completion()
+                }
             }
         } else {
             importFailed(message: String(localized: "No settings found in clipboard"))
-            completion()
+            DispatchQueue.main.async {
+                completion()
+            }
         }
     }
 
-    func exportToFile(completion: @escaping (URL?) -> Void) {
+    func exportToFile(completion: @escaping @MainActor (URL?) -> Void) {
         settings.exportToFile(onCompleted: completion)
     }
 
@@ -60,11 +73,24 @@ extension Model {
     }
 
     private func importSucceeded() {
+        setDebugLogging(on: database.debug.debugLogging)
         setCurrentStream()
         updateIconImageFromDatabase()
+        updateMicsList()
+        show.chatPhone = isChatPhone()
+        updateScreenAutoOff()
         reloadStream()
+        chatBotCustomCommandsTextChanged()
+        macrosTextFormatChanged()
         resetSelectedScene()
-        updateQuickButtonStates()
+        setupAudioAfterSettingsImport()
+        updateQuickButtonPairs()
+        loadStealthModeImage()
+        loadControlBarBackgroundImage()
+        loadFaceBackgroundImage()
+        reloadDjiDevicesAfterSettingsImport()
+        reloadGoProDevicesAfterSettingsImport()
+        reloadHttpProxyServer()
         makeToast(title: String(localized: "Settings imported"))
     }
 

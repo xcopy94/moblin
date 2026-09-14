@@ -2,24 +2,23 @@ import SwiftUI
 
 private func formatTeslaVehicleState(state: TeslaVehicleState?) -> String {
     if state == nil || state == .idle {
-        return String(localized: "Disconnected")
-    } else if state == .discovering {
-        return String(localized: "Discovering")
+        String(localized: "Disconnected")
     } else if state == .connecting {
-        return String(localized: "Connecting")
+        String(localized: "Connecting")
     } else if state == .connected {
-        return String(localized: "Connected")
+        String(localized: "Connected")
     } else {
-        return String(localized: "Unknown")
+        String(localized: "Unknown")
     }
 }
 
 private struct TeslaSettingsConfigurationView: View {
     @EnvironmentObject var model: Model
     @ObservedObject var tesla: Tesla
+    @ObservedObject var settings: SettingsTesla
 
     private var database: Database {
-        return model.database
+        model.database
     }
 
     private func onSubmitVin(value: String) {
@@ -27,14 +26,36 @@ private struct TeslaSettingsConfigurationView: View {
         model.reloadTeslaVehicle()
     }
 
+    private func onDeviceChange(value: String) {
+        guard let deviceId = UUID(uuidString: value) else {
+            return
+        }
+        guard let peripheral = TeslaVehicleScanner.shared.discoveredPeripherals
+            .first(where: { $0.identifier == deviceId })
+        else {
+            return
+        }
+        settings.bluetoothPeripheralName = peripheral.name
+        settings.bluetoothPeripheralId = deviceId
+        model.reloadTeslaVehicle()
+    }
+
     var body: some View {
         Form {
             Section {
+                NavigationLink {
+                    TeslaVehicleScannerSettingsView(onChange: onDeviceChange)
+                } label: {
+                    GrayTextView(text: settings
+                        .bluetoothPeripheralName ?? String(localized: "Select vehicle"))
+                }
                 TextEditNavigationView(
                     title: String(localized: "VIN"),
                     value: database.tesla.vin,
                     onSubmit: onSubmitVin
                 )
+            } header: {
+                Text("Vehicle")
             } footer: {
                 Text("Scroll down in your Tesla app and copy it.")
             }
@@ -73,7 +94,7 @@ struct TeslaSettingsView: View {
                 HCenter {
                     Image("Tesla")
                         .resizable()
-                        .aspectRatio(contentMode: .fit)
+                        .scaledToFit()
                 }
             }
             Section {
@@ -86,7 +107,7 @@ struct TeslaSettingsView: View {
                     Text("Enabled")
                 }
                 NavigationLink {
-                    TeslaSettingsConfigurationView(tesla: tesla)
+                    TeslaSettingsConfigurationView(tesla: tesla, settings: model.database.tesla)
                 } label: {
                     Text("Configuration")
                 }

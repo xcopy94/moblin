@@ -1,7 +1,10 @@
-import sys
 import json
+import re
+import sys
 from pathlib import Path
+
 from deep_translator import GoogleTranslator
+from pyleetspeak2.LeetSpeaker import LeetSpeaker
 
 LANGUAGES = [
     ("sv", "sv"),
@@ -25,32 +28,51 @@ LANGUAGES = [
     ("ko", "ko"),
     ("ru", "ru"),
     ("uk", "uk"),
-    ("sk", "sk")
+    ("sk", "sk"),
 ]
+
+LEETSPEAK_LANGUAGE = "eo"
+
+PRESERVED_RE = re.compile(r"%(?:\d+\$)?(?:@|lld|llu|[dfu])|[^\x00-\x7f]+")
+
+
+def to_leetspeak(leet_speaker, text):
+    parts = []
+    position = 0
+
+    for match in PRESERVED_RE.finditer(text):
+        parts.append(leet_speaker.text2leet(text[position : match.start()]))
+        parts.append(match.group(0))
+        position = match.end()
+
+    parts.append(leet_speaker.text2leet(text[position:]))
+
+    return "".join(parts)
 
 
 def needs_translation(item):
-    state = item['stringUnit']['state']
+    state = item["stringUnit"]["state"]
 
-    return state not in ['translated', 'needs_review']
+    return state not in ["translated", "needs_review"]
 
 
 def main():
     localizable_xcstrings_path = Path(sys.argv[1])
-    localizable = json.loads(localizable_xcstrings_path.read_text())
+    localizable = json.loads(localizable_xcstrings_path.read_text(encoding="utf-8"))
+    leet_speaker = LeetSpeaker(mode="basic", change_prb=1, change_frq=1, uniform_change=True)
 
     try:
-        for english, value in localizable['strings'].items():
-            localizations = value.get('localizations')
+        for english, value in localizable["strings"].items():
+            localizations = value.get("localizations")
 
             if localizations is None:
                 localizations = {}
-                value['localizations'] = localizations
-                
+                value["localizations"] = localizations
+
             for xcode_languages, google_language in LANGUAGES:
                 translated = None
 
-                if not isinstance(xcode_languages, list):
+                if isinstance(xcode_languages, str):
                     xcode_languages = [xcode_languages]
 
                 for xcode_language in xcode_languages:
@@ -62,7 +84,7 @@ def main():
 
                         if translated is None:
                             print(f'Translating "{english}" to {", ".join(xcode_languages)}')
-                            translator = GoogleTranslator(source='en', target=google_language)
+                            translator = GoogleTranslator(source="en", target=google_language)
 
                             try:
                                 translated = translator.translate(english)
@@ -70,17 +92,24 @@ def main():
                                 translated = english
 
                         localizations[xcode_language] = {
-                            'stringUnit': {
-                                'state': 'needs_review',
-                                'value': translated
-                            }
+                            "stringUnit": {"state": "needs_review", "value": translated}
                         }
+
+            item = localizations.get(LEETSPEAK_LANGUAGE)
+
+            if (item is None or needs_translation(item)) and english.strip():
+                print(f'Translating "{english}" to {LEETSPEAK_LANGUAGE}')
+                localizations[LEETSPEAK_LANGUAGE] = {
+                    "stringUnit": {
+                        "state": "needs_review",
+                        "value": to_leetspeak(leet_speaker, english),
+                    }
+                }
     finally:
         localizable_xcstrings_path.write_text(
-            json.dumps(localizable,
-                       indent=2,
-                       ensure_ascii=False,
-                       separators=(',', ' : ')))
+            json.dumps(localizable, indent=2, ensure_ascii=False, separators=(",", " : ")),
+            encoding="utf-8",
+        )
 
 
 main()

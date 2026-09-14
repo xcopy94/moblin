@@ -8,18 +8,19 @@ struct SnapshotJob {
 
 extension Model {
     func takeSnapshot(isChatBot: Bool = false, message: String? = nil, noDelay: Bool = false) {
+        guard !isChatPhone() else {
+            return
+        }
         let age = (isChatBot && !noDelay) ? stream.estimatedViewerDelay : 0.0
         media.takeSnapshot(age: age) { uiImage, image, portraitImage in
             guard let imageJpeg = uiImage.jpegData(compressionQuality: 0.9) else {
                 return
             }
-            DispatchQueue.main.async {
-                UIImageWriteToSavedPhotosAlbum(uiImage, nil, nil, nil)
-                self.makeToast(title: String(localized: "Snapshot saved to Photos"))
-                self.tryUploadSnapshotToDiscord(imageJpeg, message, isChatBot)
-                self.printSnapshotCatPrinters(image: portraitImage)
-                self.appendSnapshotToSnapshotWidgets(image: image)
-            }
+            UIImageWriteToSavedPhotosAlbum(uiImage, nil, nil, nil)
+            self.makeToast(title: String(localized: "Snapshot saved to Photos"))
+            self.tryUploadSnapshotToDiscord(imageJpeg, message, isChatBot)
+            self.printSnapshotCatPrinters(image: portraitImage)
+            self.appendSnapshotToSnapshotWidgets(image: image)
         }
     }
 
@@ -42,15 +43,15 @@ extension Model {
     }
 
     func formatSnapshotTakenBy(user: String) -> String {
-        return String(localized: "Snapshot taken by \(user).")
+        String(localized: "Snapshot taken by \(user).")
     }
 
     func formatSnapshotTakenSuccessfully(user: String) -> String {
-        return String(localized: "\(user), thanks for bringing our photo album to life. 🎉")
+        String(localized: "\(user), thanks for bringing our photo album to life. 🎉")
     }
 
     func formatSnapshotTakenNotAllowed(user: String) -> String {
-        return String(localized: " \(user), you are not allowed to take snapshots, sorry. 😢")
+        String(localized: " \(user), you are not allowed to take snapshots, sorry. 😢")
     }
 
     private func snapshotCountdownTick() {
@@ -77,15 +78,18 @@ extension Model {
     }
 
     func takeSnapshotWithCountdown(isChatBot: Bool, message: String, user: String?) {
+        guard !isChatPhone() else {
+            return
+        }
         snapshotJobs.append(SnapshotJob(isChatBot: isChatBot, message: message, user: user))
         tryTakeNextSnapshot()
     }
 
     private func getDiscordWebhookUrl(_ isChatBot: Bool) -> URL? {
         if isChatBot {
-            return URL(string: stream.discordChatBotSnapshotWebhook)
+            URL(string: stream.discordChatBotSnapshotWebhook)
         } else {
-            return URL(string: stream.discordSnapshotWebhook)
+            URL(string: stream.discordSnapshotWebhook)
         }
     }
 
@@ -102,14 +106,24 @@ extension Model {
             image: image,
             message: message
         ) { ok in
-            DispatchQueue.main.async {
-                if ok {
-                    self.makeToast(title: String(localized: "Snapshot uploaded to Discord"))
-                } else {
-                    self.makeErrorToast(title: String(localized: "Failed to upload snapshot to Discord"))
-                }
+            if ok {
+                self.makeToast(title: String(localized: "Snapshot uploaded to Discord"))
+            } else {
+                self.makeErrorToast(title: String(localized: "Failed to upload snapshot to Discord"))
             }
         }
+    }
+
+    func takeVideoSourcePreviewImage(widget: SettingsWidget,
+                                     onComplete: @escaping @MainActor (UIImage?) -> Void)
+    {
+        guard widget.type == .videoSource,
+              let videoSourceId = getVideoSourceId(cameraId: widget.videoSource.toCameraId())
+        else {
+            onComplete(nil)
+            return
+        }
+        media.takeVideoSourceSnapshot(videoSourceId: videoSourceId, onComplete: onComplete)
     }
 
     func setCleanSnapshots() {

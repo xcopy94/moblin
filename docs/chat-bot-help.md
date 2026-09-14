@@ -17,8 +17,15 @@
 | !moblin stream title \<title> | Set stream title. |
 | !moblin widget \<name> timer \<number> add \<seconds> | Add time to a timer. |
 | !moblin ai ask \<question> | Ask AI a question. |
+| !moblin custom \<name> | Send the text of given custom command to chat. Configure custom commands in Moblin. |
 | !moblin mute | Mute audio. |
 | !moblin unmute | Unmute audio. |
+| !moblin music add <song> | Add a song. Free text search or share link. |
+| !moblin music play | Play. |
+| !moblin music pause | Pause. |
+| !moblin music next [\<count>] | Next song(s). |
+| !moblin music previous [\<count>] | Previous song(s). |
+| !moblin music status | Show status. |
 | !moblin tesla trunk open | Open the trunk. |
 | !moblin tesla trunk close | Close the trunk. |
 | !moblin tesla media next | Next track. |
@@ -44,7 +51,11 @@
 | !moblin filter pinch off | Turn off the pinch filter. |
 | !moblin reaction fireworks | Trigger Apple fireworks reaction. |
 | !moblin reaction balloons | Trigger Apple balloons reaction. |
-| !moblin reaction heart | Trigger Apple heart reaction. |
+| !moblin reaction hearts | Trigger Apple hearts reaction. |
 | !moblin reaction confetti | Trigger Apple confetti reaction. |
 | !moblin reaction lasers | Trigger Apple lasers reaction. |
 | !moblin reaction rain | Trigger Apple rain reaction. |
+| !moblin reaction glasses | Trigger glasses reaction. |
+| !moblin reaction sparkle | Trigger sparkle reaction. |
+| !moblin macro run \<name> | Run given macro. |
+| !moblin macro cancel \<name> | Cancel given macro. |

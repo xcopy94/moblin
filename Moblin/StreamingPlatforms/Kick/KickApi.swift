@@ -51,15 +51,14 @@ struct KickChatterInfo: Codable {
     func toChatterInfo(accountCreated: String?, bio: String?,
                        followers: Int?) -> ChatterInfo
     {
-        let role: ChatterRole
-        if is_channel_owner {
-            role = .owner
+        let role: ChatterRole = if is_channel_owner {
+            .owner
         } else if is_staff {
-            role = .staff
+            .staff
         } else if is_moderator {
-            role = .moderator
+            .moderator
         } else {
-            role = .viewer
+            .viewer
         }
         let giftedSubs = badges.first(where: { $0.type == "sub_gifter" })?.count
         return ChatterInfo(
@@ -141,7 +140,7 @@ struct KickStreamInfo {
 private let userUrl = URL(string: "https://kick.com/api/v1/user")!
 
 private func makeSlug(channelName: String) -> String {
-    return channelName.replacingOccurrences(of: "_", with: "-")
+    channelName.replace("_", "-")
 }
 
 func getKickChannelInfo(channelName: String) async throws -> KickChannel {
@@ -195,7 +194,7 @@ func fetchKickProfilePicture(username: String) async -> UIImage? {
         return image
     }
     if username.contains("_") {
-        let kebabUsername = username.replacingOccurrences(of: "_", with: "-")
+        let kebabUsername = username.replace("_", "-")
         return await fetchKickProfilePictureWithUsername(kebabUsername)
     }
     return nil
@@ -217,10 +216,15 @@ private func fetchKickProfilePictureWithUsername(_ username: String) async -> UI
     return UIImage(data: data)
 }
 
+protocol KickApiDelegate: AnyObject {
+    func kickApiUnauthorized()
+}
+
 class KickApi {
     private let channelId: String
     private let slug: String
     private let accessToken: String
+    weak var delegate: (any KickApiDelegate)?
 
     init(channelId: String, slug: String, accessToken: String) {
         self.channelId = channelId
@@ -352,6 +356,13 @@ class KickApi {
                     onComplete: onComplete)
     }
 
+    func setShowViewCount(channelId: String, enabled: Bool, onComplete: @escaping (OperationResult) -> Void) {
+        doWebV1Request(method: "PATCH",
+                       subPath: "channels/\(channelId)/settings",
+                       body: ["show_view_count": enabled],
+                       onComplete: onComplete)
+    }
+
     func setSubscribersOnlyMode(enabled: Bool, onComplete: @escaping (OperationResult) -> Void) {
         doV2Request(method: "PUT",
                     subPath: "channels/\(slug)/chatroom",
@@ -455,7 +466,7 @@ class KickApi {
                 onComplete(nil)
                 return
             }
-            onComplete(searchResponse.hits.map { $0.document })
+            onComplete(searchResponse.hits.map(\.document))
         }
     }
 
@@ -520,7 +531,10 @@ class KickApi {
                              body: [String: Any]? = nil,
                              onComplete: @escaping (OperationResult) -> Void)
     {
-        doRequest(method: method, subPath: "v2/\(subPath)", body: body, onComplete: onComplete)
+        guard let url = URL(string: "https://kick.com/api/v2/\(subPath)") else {
+            return
+        }
+        doRequest(url: url, method: method, body: body, onComplete: onComplete)
     }
 
     private func doInternalV1Request(method: String,
@@ -528,17 +542,28 @@ class KickApi {
                                      body: [String: Any]? = nil,
                                      onComplete: @escaping (OperationResult) -> Void)
     {
-        doRequest(method: method, subPath: "internal/v1/\(subPath)", body: body, onComplete: onComplete)
+        guard let url = URL(string: "https://kick.com/api/internal/v1/\(subPath)") else {
+            return
+        }
+        doRequest(url: url, method: method, body: body, onComplete: onComplete)
     }
 
-    private func doRequest(method: String,
-                           subPath: String,
+    private func doWebV1Request(method: String,
+                                subPath: String,
+                                body: [String: Any]? = nil,
+                                onComplete: @escaping (OperationResult) -> Void)
+    {
+        guard let url = URL(string: "https://web.kick.com/api/v1/\(subPath)") else {
+            return
+        }
+        doRequest(url: url, method: method, body: body, onComplete: onComplete)
+    }
+
+    private func doRequest(url: URL,
+                           method: String,
                            body: [String: Any]? = nil,
                            onComplete: @escaping (OperationResult) -> Void)
     {
-        guard let url = URL(string: "https://kick.com/api/\(subPath)") else {
-            return
-        }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setContentType("application/json")
@@ -552,6 +577,7 @@ class KickApi {
                     logger.info("kick-api: Error response body: \(data)")
                 }
                 if response?.http?.isUnauthorized == true {
+                    self.delegate?.kickApiUnauthorized()
                     onComplete(.authError)
                 } else {
                     onComplete(.error)

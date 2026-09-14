@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 
+@MainActor
 class VideoPreviewFeed: Identifiable, ObservableObject {
     let cameraId: UUID
     let name: String
@@ -11,10 +12,6 @@ class VideoPreviewFeed: Identifiable, ObservableObject {
         self.name = name
         previewView = PreviewView()
         previewView.videoGravity = .resizeAspect
-    }
-
-    func enqueue(_ sampleBuffer: CMSampleBuffer, isFirstAfterAttach: Bool) {
-        previewView.enqueue(sampleBuffer, isFirstAfterAttach: isFirstAfterAttach)
     }
 }
 

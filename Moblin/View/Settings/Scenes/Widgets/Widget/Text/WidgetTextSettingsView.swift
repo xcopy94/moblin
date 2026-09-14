@@ -1,6 +1,8 @@
+import CoreText
 import PhotosUI
 import SwiftUI
-import Translation
+@preconcurrency import Translation
+import UIKit
 
 private struct Suggestion: Identifiable {
     let id: Int
@@ -27,8 +29,10 @@ private let suggestionDebug = "{time}\n{bitrateAndTotal}\n{debugOverlay}"
 private let suggestionTesla = "🚗 Tesla\n⚙️ {teslaDrive}\n🔋 {teslaBatteryLevel}\n🔈 {teslaMedia}"
 private let suggestionRacing = "🏎️ Racing 🏎️\n{lapTimes}"
 
+@MainActor
 private let suggestions = createSuggestions()
 
+@MainActor
 private func createSuggestions() -> [Suggestion] {
     var suggestions = [
         Suggestion(id: 0, name: "Travel", text: suggestionTravel),
@@ -58,8 +62,20 @@ private func createSuggestions() -> [Suggestion] {
     return suggestions
 }
 
+@MainActor
+private let chatBotSuggestions = createChatBotSuggestions()
+
+@MainActor
+private func createChatBotSuggestions() -> [Suggestion] {
+    [
+        Suggestion(id: 0, name: "Travel", text: suggestionTravel.replace("\n", " ")),
+        Suggestion(id: 1, name: "Debug", text: suggestionDebug.replace("\n", " ")),
+    ]
+}
+
 private struct SuggestionView: View {
     let suggestion: Suggestion
+    let widget: Bool
     @Binding var text: String
     let dismiss: () -> Void
     @State private var presentingConfirmation = false
@@ -67,6 +83,14 @@ private struct SuggestionView: View {
     private func submit() {
         text = suggestion.text
         dismiss()
+    }
+
+    private func confirmationTitle() -> String {
+        if widget {
+            String(localized: "Are you sure you want to replace the content of the current text widget?")
+        } else {
+            String(localized: "Are you sure you want to replace the text of the current command?")
+        }
     }
 
     var body: some View {
@@ -81,7 +105,7 @@ private struct SuggestionView: View {
                 Text(suggestion.name)
                     .font(.title3)
             }
-            .confirmationDialog("Are you sure you want to replace the content of the current text widget?",
+            .confirmationDialog(confirmationTitle(),
                                 isPresented: $presentingConfirmation,
                                 titleVisibility: .visible)
             {
@@ -104,7 +128,7 @@ private struct VariableView: View {
         VStack(alignment: .leading) {
             Button {
                 text += title
-                model.makeToast(title: "Appended \(title) to widget text")
+                model.makeToast(title: "Appended \(title) to text")
             } label: {
                 Text(title)
                     .font(.title3)
@@ -155,7 +179,7 @@ private struct SubtitlesWithLanguageView: View {
                                 Button {
                                     let value = "{subtitles:\(language.identifier)}"
                                     text += value
-                                    model.makeToast(title: "Appended \(value) to widget text")
+                                    model.makeToast(title: "Appended \(value) to text")
                                     presentingLanguagePicker = false
                                 } label: {
                                     Text(language.name)
@@ -191,6 +215,107 @@ private struct SubtitlesWithLanguageView: View {
                 }
             }
         }
+    }
+}
+
+private struct VariableWithUnitView: View {
+    let model: Model
+    let description: String
+    let variable: String
+    let units: [(String, String)]
+    @Binding var text: String
+    @State private var presentingPicker: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Button {
+                presentingPicker = true
+            } label: {
+                Text("{\(variable):<unit>}")
+                    .font(.title3)
+            }
+            Text(description)
+        }
+        .sheet(isPresented: $presentingPicker) {
+            NavigationStack {
+                Form {
+                    Section {
+                        ForEach(units, id: \.0) { name, symbol in
+                            Button {
+                                let value = "{\(variable):\(symbol)}"
+                                text += value
+                                model.makeToast(title: "Appended \(value) to text")
+                                presentingPicker = false
+                            } label: {
+                                Text(name)
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Unit")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    CloseToolbar(presenting: $presentingPicker)
+                }
+            }
+        }
+    }
+}
+
+private struct VariableWithLengthUnitView: View {
+    let model: Model
+    let description: String
+    let variable: String
+    @Binding var text: String
+
+    private func units() -> [(String, String)] {
+        TextFormatLengthUnit.allCases.filter { $0 != .system }.map { ($0.toString(), $0.symbol()) }
+    }
+
+    var body: some View {
+        VariableWithUnitView(model: model,
+                             description: description,
+                             variable: variable,
+                             units: units(),
+                             text: $text)
+    }
+}
+
+private struct VariableWithSpeedUnitView: View {
+    let model: Model
+    let description: String
+    let variable: String
+    @Binding var text: String
+
+    private func units() -> [(String, String)] {
+        TextFormatSpeedUnit.allCases.filter { $0 != .system }.map { ($0.toString(), $0.symbol()) }
+    }
+
+    var body: some View {
+        VariableWithUnitView(model: model,
+                             description: description,
+                             variable: variable,
+                             units: units(),
+                             text: $text)
+    }
+}
+
+private struct VariableWithTemperatureUnitView: View {
+    let model: Model
+    let description: String
+    let variable: String
+    @Binding var text: String
+
+    private func units() -> [(String, String)] {
+        TextFormatTemperatureUnit.allCases.filter { $0 != .system }.map { ($0.toString(), $0.symbol()) }
+    }
+
+    var body: some View {
+        VariableWithUnitView(model: model,
+                             description: description,
+                             variable: variable,
+                             units: units(),
+                             text: $text)
     }
 }
 
@@ -295,7 +420,7 @@ private struct TimerWidgetView: View {
                 HStack(spacing: 13) {
                     Picker("", selection: $timer.delta) {
                         ForEach([1, 2, 5, 15, 60], id: \.self) { delta in
-                            Text("\(delta) min")
+                            Text(formatShortDuration(seconds: 60 * delta))
                                 .tag(delta)
                         }
                     }
@@ -603,13 +728,14 @@ private struct LapTimesWidgetView: View {
 
 private struct TextWidgetSuggestionsInnerView: View {
     @Environment(\.dismiss) var dismiss
+    let widget: Bool
     @Binding var text: String
 
     var body: some View {
         Form {
             Section {
-                ForEach(suggestions) { suggestion in
-                    SuggestionView(suggestion: suggestion, text: $text) {
+                ForEach(widget ? suggestions : chatBotSuggestions) { suggestion in
+                    SuggestionView(suggestion: suggestion, widget: widget, text: $text) {
                         dismiss()
                     }
                     .tag(suggestion.id)
@@ -621,21 +747,24 @@ private struct TextWidgetSuggestionsInnerView: View {
 }
 
 private struct GeneralVariablesView: View {
+    let widget: Bool
     @Binding var value: String
 
     var body: some View {
         NavigationLink {
             Form {
-                VariableView(
-                    title: "{checkbox}",
-                    description: String(localized: "Show a checkbox"),
-                    text: $value
-                )
-                VariableView(
-                    title: "{rating}",
-                    description: String(localized: "Show a 0-5 rating"),
-                    text: $value
-                )
+                if widget {
+                    VariableView(
+                        title: "{checkbox}",
+                        description: String(localized: "Show a checkbox"),
+                        text: $value
+                    )
+                    VariableView(
+                        title: "{rating}",
+                        description: String(localized: "Show a 0-5 rating"),
+                        text: $value
+                    )
+                }
                 VariableView(title: "{muted}", description: String(localized: "Show muted"), text: $value)
                 VariableView(
                     title: "{browserTitle}",
@@ -662,6 +791,7 @@ private struct GeneralVariablesView: View {
 }
 
 private struct TimeVariablesView: View {
+    let widget: Bool
     @Binding var value: String
 
     var body: some View {
@@ -688,17 +818,21 @@ private struct TimeVariablesView: View {
                 VariableView(title: "{fullDate}",
                              description: String(localized: "Show date as \(fullDate)"),
                              text: $value)
-                VariableView(title: "{timer}", description: String(localized: "Show a timer"), text: $value)
-                VariableView(
-                    title: "{stopwatch}",
-                    description: String(localized: "Show a stopwatch"),
-                    text: $value
-                )
-                VariableView(
-                    title: "{lapTimes}",
-                    description: String(localized: "Show lap times"),
-                    text: $value
-                )
+                if widget {
+                    VariableView(title: "{timer}",
+                                 description: String(localized: "Show a timer"),
+                                 text: $value)
+                    VariableView(
+                        title: "{stopwatch}",
+                        description: String(localized: "Show a stopwatch"),
+                        text: $value
+                    )
+                    VariableView(
+                        title: "{lapTimes}",
+                        description: String(localized: "Show lap times"),
+                        text: $value
+                    )
+                }
             }
             .navigationTitle("Time")
         } label: {
@@ -708,6 +842,7 @@ private struct TimeVariablesView: View {
 }
 
 private struct LocationVariablesView: View {
+    let model: Model
     @Binding var value: String
 
     var body: some View {
@@ -725,23 +860,102 @@ private struct LocationVariablesView: View {
                         text: $value
                     )
                     VariableView(title: "{state}", description: String(localized: "Show state"), text: $value)
+                    VariableView(title: "{area}", description: String(localized: "Show area"), text: $value)
                     VariableView(title: "{city}", description: String(localized: "Show city"), text: $value)
+                    VariableView(
+                        title: "{neighborhood}",
+                        description: String(localized: "Show neighborhood"),
+                        text: $value
+                    )
                     VariableView(title: "{speed}", description: String(localized: "Show speed"), text: $value)
+                    VariableWithSpeedUnitView(model: model,
+                                              description: String(localized: "Show speed in given unit"),
+                                              variable: "speed",
+                                              text: $value)
                     VariableView(
                         title: "{averageSpeed}",
                         description: String(localized: "Show average speed"),
                         text: $value
                     )
+                    VariableWithSpeedUnitView(model: model,
+                                              description: String(
+                                                  localized: "Show average speed in given unit"
+                                              ),
+                                              variable: "averageSpeed",
+                                              text: $value)
                     VariableView(
                         title: "{altitude}",
                         description: String(localized: "Show altitude"),
                         text: $value
                     )
+                    VariableWithLengthUnitView(model: model,
+                                               description: String(localized: "Show altitude in given unit"),
+                                               variable: "altitude",
+                                               text: $value)
                     VariableView(
                         title: "{distance}",
                         description: String(localized: "Show distance"),
                         text: $value
                     )
+                    VariableWithLengthUnitView(model: model,
+                                               description: String(localized: "Show distance in given unit"),
+                                               variable: "distance",
+                                               text: $value)
+                    VariableView(
+                        title: "{splitDistance}",
+                        description: String(localized: "Show split distance"),
+                        text: $value
+                    )
+                    VariableWithLengthUnitView(model: model,
+                                               description: String(
+                                                   localized: "Show split distance in given unit"
+                                               ),
+                                               variable: "splitDistance",
+                                               text: $value)
+                    VariableView(
+                        title: "{altitudeAscent}",
+                        description: String(localized: "Show altitude ascent"),
+                        text: $value
+                    )
+                    VariableWithLengthUnitView(model: model,
+                                               description: String(
+                                                   localized: "Show altitude ascent in given unit"
+                                               ),
+                                               variable: "altitudeAscent",
+                                               text: $value)
+                    VariableView(
+                        title: "{altitudeDescent}",
+                        description: String(localized: "Show altitude descent"),
+                        text: $value
+                    )
+                    VariableWithLengthUnitView(model: model,
+                                               description: String(
+                                                   localized: "Show altitude descent in given unit"
+                                               ),
+                                               variable: "altitudeDescent",
+                                               text: $value)
+                    VariableView(
+                        title: "{splitAltitudeAscent}",
+                        description: String(localized: "Show split altitude ascent"),
+                        text: $value
+                    )
+                    VariableWithLengthUnitView(model: model,
+                                               description: String(
+                                                   localized: "Show split altitude ascent in given unit"
+                                               ),
+                                               variable: "splitAltitudeAscent",
+                                               text: $value)
+                    VariableView(
+                        title: "{splitAltitudeDescent}",
+                        description: String(localized: "Show split altitude descent"),
+                        text: $value
+                    )
+                    VariableWithLengthUnitView(model: model,
+                                               description: String(
+                                                   localized: "Show split altitude descent in given unit"
+                                               ),
+                                               variable: "splitAltitudeDescent",
+                                               text: $value)
                     VariableView(title: "{slope}", description: String(localized: "Show slope"), text: $value)
                 }
             }
@@ -753,6 +967,7 @@ private struct LocationVariablesView: View {
 }
 
 private struct WeatherVariablesView: View {
+    let model: Model
     @Binding var value: String
 
     var body: some View {
@@ -769,16 +984,32 @@ private struct WeatherVariablesView: View {
                         description: String(localized: "Show temperature"),
                         text: $value
                     )
+                    VariableWithTemperatureUnitView(model: model,
+                                                    description: String(
+                                                        localized: "Show temperature in given unit"
+                                                    ),
+                                                    variable: "temperature",
+                                                    text: $value)
                     VariableView(
                         title: "{feelsLikeTemperature}",
                         description: String(localized: "Show feels like temperature"),
                         text: $value
                     )
+                    VariableWithTemperatureUnitView(model: model,
+                                                    description: String(
+                                                        localized: "Show feels like temperature in given unit"
+                                                    ),
+                                                    variable: "feelsLikeTemperature",
+                                                    text: $value)
                     VariableView(
                         title: "{wind}",
                         description: String(localized: "Show wind"),
                         text: $value
                     )
+                    VariableWithSpeedUnitView(model: model,
+                                              description: String(localized: "Show wind in given unit"),
+                                              variable: "wind",
+                                              text: $value)
                 } footer: {
                     VStack(alignment: .leading) {
                         let image = Image(systemName: "apple.logo")
@@ -881,6 +1112,11 @@ private struct WorkoutVariablesView: View {
                         description: String(localized: "Show cycling cadence"),
                         text: $value
                     )
+                    VariableView(
+                        title: "{cyclingSpeed}",
+                        description: String(localized: "Show cycling speed"),
+                        text: $value
+                    )
                 }
             }
             .navigationTitle("Workout")
@@ -919,6 +1155,30 @@ private struct TeslaVariablesView: View {
     }
 }
 
+private struct StreamingVariablesView: View {
+    @Binding var value: String
+
+    var body: some View {
+        NavigationLink {
+            Form {
+                VariableView(
+                    title: "{latestSubscriber}",
+                    description: String(localized: "Show latest subscriber"),
+                    text: $value
+                )
+                VariableView(
+                    title: "{latestFollower}",
+                    description: String(localized: "Show latest follower"),
+                    text: $value
+                )
+            }
+            .navigationTitle("Streaming")
+        } label: {
+            Text("Streaming")
+        }
+    }
+}
+
 private struct DebugVariablesView: View {
     @Binding var value: String
 
@@ -936,6 +1196,11 @@ private struct DebugVariablesView: View {
                     text: $value
                 )
                 VariableView(
+                    title: "{bonding}",
+                    description: String(localized: "Show bonding percentage split"),
+                    text: $value
+                )
+                VariableView(
                     title: "{resolution}",
                     description: String(localized: "Show resolution"),
                     text: $value
@@ -950,10 +1215,39 @@ private struct DebugVariablesView: View {
                     description: String(localized: "Show debug overlay (if enabled)"),
                     text: $value
                 )
+                VariableView(
+                    title: "{systemMonitor}",
+                    description: String(localized: "Show system monitor (if enabled)"),
+                    text: $value
+                )
             }
             .navigationTitle("Debug")
         } label: {
             Text("Debug")
+        }
+    }
+}
+
+struct TextFormatVariablesView: View {
+    @EnvironmentObject var model: Model
+    let widget: Bool
+    @Binding var value: String
+
+    var body: some View {
+        Section {
+            GeneralVariablesView(widget: widget, value: $value)
+            TimeVariablesView(widget: widget, value: $value)
+            LocationVariablesView(model: model, value: $value)
+            WeatherVariablesView(model: model, value: $value)
+            if widget {
+                LanguageVariablesView(value: $value)
+            }
+            WorkoutVariablesView(model: model, value: $value)
+            TeslaVariablesView(value: $value)
+            StreamingVariablesView(value: $value)
+            DebugVariablesView(value: $value)
+        } header: {
+            Text("Variables")
         }
     }
 }
@@ -968,22 +1262,11 @@ private struct TextSelectionView: View {
     var body: some View {
         Form {
             TextWidgetTextView(value: $value)
-            WarningsView(model: model, location: model.database.location, value: $value)
+            TextFormatWarningsView(model: model, location: model.database.location, value: $value)
             Section {
-                TextWidgetSuggestionsView(text: $value)
+                TextWidgetSuggestionsView(widget: true, text: $value)
             }
-            Section {
-                GeneralVariablesView(value: $value)
-                TimeVariablesView(value: $value)
-                LocationVariablesView(value: $value)
-                WeatherVariablesView(value: $value)
-                LanguageVariablesView(value: $value)
-                WorkoutVariablesView(model: model, value: $value)
-                TeslaVariablesView(value: $value)
-                DebugVariablesView(value: $value)
-            } header: {
-                Text("Variables")
-            }
+            TextFormatVariablesView(widget: true, value: $value)
         }
         .onChange(of: value) { _ in
             widget.text.formatString = value
@@ -1010,7 +1293,7 @@ struct TextWidgetTextView: View {
     }
 }
 
-private struct WarningsView: View {
+struct TextFormatWarningsView: View {
     @ObservedObject var model: Model
     @ObservedObject var location: SettingsLocation
     @Binding var value: String
@@ -1110,14 +1393,122 @@ struct WidgetTextQuickButtonControlsView: View {
 }
 
 struct TextWidgetSuggestionsView: View {
+    let widget: Bool
     @Binding var text: String
 
     var body: some View {
         NavigationLink {
-            TextWidgetSuggestionsInnerView(text: $text)
+            TextWidgetSuggestionsInnerView(widget: widget, text: $text)
         } label: {
             Text("Suggestions")
         }
+    }
+}
+
+private struct FontFamilyPickerView: View {
+    @Binding var selectedFontFamily: String?
+    var onChange: () -> Void
+    @State private var fontFamilies: [String] = []
+
+    var body: some View {
+        Form {
+            Section {
+                List {
+                    HStack {
+                        Text("System")
+                        Spacer()
+                        Button {
+                            selectedFontFamily = nil
+                            onChange()
+                        } label: {
+                            if selectedFontFamily == nil {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                    ForEach(fontFamilies, id: \.self) { family in
+                        HStack {
+                            Text(family)
+                                .font(.custom(family, size: 17))
+                            Spacer()
+                            Button {
+                                selectedFontFamily = family
+                                onChange()
+                            } label: {
+                                if selectedFontFamily == family {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Family")
+        .onAppear {
+            if fontFamilies.isEmpty {
+                fontFamilies = Self.loadFontFamilies()
+            }
+        }
+    }
+
+    private static func loadFontFamilies() -> [String] {
+        var families = Set(UIFont.familyNames)
+        let collection = CTFontCollectionCreateFromAvailableFonts(nil)
+        if let descriptors =
+            CTFontCollectionCreateMatchingFontDescriptors(collection) as? [CTFontDescriptor]
+        {
+            for descriptor in descriptors {
+                if let family = CTFontDescriptorCopyAttribute(
+                    descriptor,
+                    kCTFontFamilyNameAttribute
+                ) as? String {
+                    families.insert(family)
+                }
+            }
+        }
+        return families.sorted()
+    }
+}
+
+func fontStyleName(family: String, fontName: String) -> String {
+    let prefix = family.replace(" ", "")
+    let name = fontName.replace("-", "")
+    if name.hasPrefix(prefix) {
+        let suffix = String(name.dropFirst(prefix.count))
+        return suffix.isEmpty ? "Regular" : suffix
+    }
+    return fontName
+}
+
+private struct FontStylePickerView: View {
+    var fontFamily: String
+    @Binding var selectedFontStyle: String
+    var onChange: () -> Void
+
+    private func fontStyles() -> [String] {
+        UIFont.fontNames(forFamilyName: fontFamily)
+    }
+
+    var body: some View {
+        List {
+            ForEach(fontStyles(), id: \.self) { style in
+                HStack {
+                    Text(fontStyleName(family: fontFamily, fontName: style))
+                        .font(.custom(style, size: 17))
+                    Spacer()
+                    Button {
+                        selectedFontStyle = style
+                        onChange()
+                    } label: {
+                        if selectedFontStyle == style {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Style")
     }
 }
 
@@ -1185,9 +1576,9 @@ struct WidgetTextSettingsView: View {
                 TextItemLocalizedView(name: "Text", value: widget.text.formatString)
             }
         }
-        WarningsView(model: model,
-                     location: model.database.location,
-                     value: $text.formatString)
+        TextFormatWarningsView(model: model,
+                               location: model.database.location,
+                               value: $text.formatString)
         let textEffects = model.getTextEffects(id: widget.id)
         if !textEffects.isEmpty {
             if !text.timers.isEmpty {
@@ -1319,37 +1710,80 @@ struct WidgetTextSettingsView: View {
                 Text(String(Int(text.fontSizeFloat)))
                     .frame(width: 35)
             }
-            Picker("Design", selection: $text.fontDesign) {
-                ForEach(SettingsFontDesign.allCases, id: \.self) {
-                    Text($0.toString())
-                        .tag($0)
+            NavigationLink {
+                FontFamilyPickerView(
+                    selectedFontFamily: $text.fontFamily,
+                    onChange: {
+                        if let fontFamily = text.fontFamily {
+                            text.fontStyle = UIFont.fontNames(forFamilyName: fontFamily).first ?? ""
+                        }
+                        for effect in model.getTextEffects(id: widget.id) {
+                            effect.setFontFamily(family: text.fontFamily)
+                            effect.setFontStyle(style: text.fontStyle)
+                        }
+                        model.remoteSceneSettingsUpdated()
+                    }
+                )
+            } label: {
+                HStack {
+                    Text("Family")
+                    Spacer()
+                    GrayTextView(text: text.fontFamilyString())
                 }
             }
-            .onChange(of: text.fontDesign) { _ in
-                for effect in model.getTextEffects(id: widget.id) {
-                    effect.setFontDesign(design: text.fontDesign.toSystem())
+            if let fontFamily = text.fontFamily {
+                NavigationLink {
+                    FontStylePickerView(
+                        fontFamily: fontFamily,
+                        selectedFontStyle: $text.fontStyle,
+                        onChange: {
+                            for effect in model.getTextEffects(id: widget.id) {
+                                effect.setFontStyle(style: text.fontStyle)
+                            }
+                            model.remoteSceneSettingsUpdated()
+                        }
+                    )
+                } label: {
+                    HStack {
+                        Text("Style")
+                        Spacer()
+                        GrayTextView(text: text.fontStyleString())
+                    }
                 }
-                model.remoteSceneSettingsUpdated()
-            }
-            Picker("Weight", selection: $text.fontWeight) {
-                ForEach(SettingsFontWeight.allCases, id: \.self) {
-                    Text($0.toString())
-                        .tag($0)
+                .disabled(UIFont.fontNames(forFamilyName: fontFamily).count == 1)
+            } else {
+                Picker("Design", selection: $text.fontDesign) {
+                    ForEach(SettingsFontDesign.allCases, id: \.self) {
+                        Text($0.toString())
+                            .tag($0)
+                    }
                 }
-            }
-            .onChange(of: text.fontWeight) { _ in
-                for effect in model.getTextEffects(id: widget.id) {
-                    effect.setFontWeight(weight: text.fontWeight.toSystem())
-                }
-                model.remoteSceneSettingsUpdated()
-            }
-            Toggle("Monospaced digits", isOn: $text.fontMonospacedDigits)
-                .onChange(of: text.fontMonospacedDigits) { _ in
+                .onChange(of: text.fontDesign) { _ in
                     for effect in model.getTextEffects(id: widget.id) {
-                        effect.setFontMonospacedDigits(enabled: text.fontMonospacedDigits)
+                        effect.setFontDesign(design: text.fontDesign.toSystem())
                     }
                     model.remoteSceneSettingsUpdated()
                 }
+                Picker("Weight", selection: $text.fontWeight) {
+                    ForEach(SettingsFontWeight.allCases, id: \.self) {
+                        Text($0.toString())
+                            .tag($0)
+                    }
+                }
+                .onChange(of: text.fontWeight) { _ in
+                    for effect in model.getTextEffects(id: widget.id) {
+                        effect.setFontWeight(weight: text.fontWeight.toSystem())
+                    }
+                    model.remoteSceneSettingsUpdated()
+                }
+                Toggle("Monospaced digits", isOn: $text.fontMonospacedDigits)
+                    .onChange(of: text.fontMonospacedDigits) { _ in
+                        for effect in model.getTextEffects(id: widget.id) {
+                            effect.setFontMonospacedDigits(enabled: text.fontMonospacedDigits)
+                        }
+                        model.remoteSceneSettingsUpdated()
+                    }
+            }
         } header: {
             Text("Font")
         }

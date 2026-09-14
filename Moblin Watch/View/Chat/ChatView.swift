@@ -1,4 +1,6 @@
 import Collections
+import Combine
+import DequeModule
 import SwiftUI
 import WrappingHStack
 
@@ -26,7 +28,7 @@ private struct LineView: View {
                     CacheImage(url: url) { image in
                         image
                             .resizable()
-                            .aspectRatio(contentMode: .fit)
+                            .scaledToFit()
                     }
                     .padding(2)
                     .frame(height: CGFloat(chatSettings.fontSize * 1.3))
@@ -47,7 +49,7 @@ private struct LineView: View {
                     CacheImage(url: url) { image in
                         image
                             .resizable()
-                            .aspectRatio(contentMode: .fit)
+                            .scaledToFit()
                     }
                     .frame(height: CGFloat(chatSettings.fontSize) * 1.5)
                     Text(" ")
@@ -83,9 +85,11 @@ private struct NormalView: View {
 
     func highlightColor(highlight: ChatPostHighlight) -> Color {
         if highlight.kind == .reply {
-            return .gray
+            .gray
+        } else if highlight.kind == .moderator {
+            .cyan
         } else {
-            return .white
+            .white
         }
     }
 
@@ -97,9 +101,11 @@ private struct NormalView: View {
                     .foregroundStyle(highlight.barColor)
                     .padding(.trailing, 3)
                 VStack(alignment: .leading) {
-                    HighlightView(image: highlight.image,
-                                  name: highlight.title,
-                                  color: highlightColor(highlight: highlight))
+                    if let title = highlight.title {
+                        HighlightView(image: highlight.image,
+                                      name: title,
+                                      color: highlightColor(highlight: highlight))
+                    }
                     LineView(chatSettings: chatSettings, post: post)
                 }
             }

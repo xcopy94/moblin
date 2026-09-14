@@ -10,16 +10,25 @@ class BufferedVideo {
     private let update: Bool
     private weak var processor: Processor?
     private let driftTracker: DriftTracker
+    private let trackDrift: Bool
     private var hasBufferBeenAppended = false
     private var stats = BufferedStats()
     let latency: Double
 
-    init(cameraId: UUID, name: String, update: Bool, latency: Double, processor: Processor?) {
+    init(
+        cameraId: UUID,
+        name: String,
+        update: Bool,
+        latency: Double,
+        processor: Processor?,
+        trackDrift: Bool
+    ) {
         self.cameraId = cameraId
         self.name = name
         self.update = update
         self.latency = latency
         self.processor = processor
+        self.trackDrift = trackDrift
         driftTracker = DriftTracker(media: "video", name: name, targetFillLevel: latency)
     }
 
@@ -38,7 +47,7 @@ class BufferedVideo {
         {
             sampleBuffers.insert(sampleBuffer, at: sampleBuffers.index(after: index))
         } else {
-            sampleBuffers.append(sampleBuffer)
+            sampleBuffers.prepend(sampleBuffer)
         }
     }
 
@@ -50,9 +59,6 @@ class BufferedVideo {
         var numberOfBuffersConsumed = 0
         let drift = driftTracker.getDrift()
         while let nextSampleBuffer = sampleBuffers.first {
-            if currentSampleBuffer == nil {
-                currentSampleBuffer = nextSampleBuffer
-            }
             if sampleBuffers.count > 200 {
                 sampleBuffer = nextSampleBuffer
                 consumeBuffer(numberOfBuffersConsumed: &numberOfBuffersConsumed)
@@ -76,7 +82,7 @@ class BufferedVideo {
         }
         if !isInitialBuffering, hasBufferBeenAppended, update {
             hasBufferBeenAppended = false
-            if let drift = driftTracker.update(outputPresentationTimeStamp, sampleBuffers) {
+            if trackDrift, let drift = driftTracker.update(outputPresentationTimeStamp, sampleBuffers) {
                 processor?.setBufferedAudioDrift(cameraId: cameraId, drift: drift)
             }
         }
@@ -124,7 +130,7 @@ class BufferedVideo {
         guard delta > 0 else {
             return false
         }
-        if candidateSampleBuffer != nil || abs(delta) > 0.01 {
+        if candidateSampleBuffer != nil || delta > 0.01 {
             return true
         }
         return false
@@ -141,12 +147,16 @@ class BufferedVideo {
         currentSampleBuffer = sampleBuffer
     }
 
+    func getLatestSampleBuffer() -> CMSampleBuffer? {
+        currentSampleBuffer
+    }
+
     func getSampleBuffer(_ presentationTimeStamp: CMTime) -> CMSampleBuffer? {
-        return currentSampleBuffer?.replacePresentationTimeStamp(presentationTimeStamp)
+        currentSampleBuffer?.replacePresentationTimeStamp(presentationTimeStamp)
     }
 
     func numberOfBuffers() -> Int {
-        return sampleBuffers.count
+        sampleBuffers.count
     }
 
     func setDrift(drift: Double) {

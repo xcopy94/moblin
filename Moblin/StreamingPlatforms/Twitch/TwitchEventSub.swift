@@ -25,13 +25,24 @@ struct TwitchEventSubMessage: Decodable {
     var text: String
 }
 
+struct TwitchEventSubSharedChat: Decodable {
+    var broadcasterUserId: String
+    var broadcasterUserName: String
+}
+
 struct TwitchEventSubNotificationChannelSubscribeEvent: Decodable {
     var user_name: String
     var tier: String
     var is_gift: Bool
+    var is_prime: Bool?
+    var sharedChat: TwitchEventSubSharedChat?
 
     func tierAsNumber() -> Int {
-        return twitchTierAsNumber(tier: tier)
+        twitchTierAsNumber(tier: tier)
+    }
+
+    func isPrime() -> Bool {
+        is_prime == true
     }
 }
 
@@ -43,13 +54,34 @@ private struct NotificationChannelSubscribeMessage: Decodable {
     var payload: NotificationChannelSubscribePayload
 }
 
+struct TwitchEventSubNotificationChannelSubscriptionUpgradeEvent {
+    var user_name: String
+    var tier: String?
+    var sharedChat: TwitchEventSubSharedChat?
+
+    func tierAsNumber() -> Int? {
+        guard let tier else {
+            return nil
+        }
+        return twitchTierAsNumber(tier: tier)
+    }
+}
+
+struct TwitchEventSubNotificationChannelWatchStreakEvent {
+    var user_name: String
+    var streak_count: Int
+    var message: TwitchEventSubMessage
+    var sharedChat: TwitchEventSubSharedChat?
+}
+
 struct TwitchEventSubNotificationChannelSubscriptionGiftEvent: Decodable {
     var user_name: String?
     var total: Int
     var tier: String
+    var sharedChat: TwitchEventSubSharedChat?
 
     func tierAsNumber() -> Int {
-        return twitchTierAsNumber(tier: tier)
+        twitchTierAsNumber(tier: tier)
     }
 }
 
@@ -64,11 +96,13 @@ private struct NotificationChannelSubscriptionGiftMessage: Decodable {
 struct TwitchEventSubNotificationChannelSubscriptionMessageEvent: Decodable {
     var user_name: String
     var cumulative_months: Int
+    var streak_months: Int?
     var tier: String
     var message: TwitchEventSubMessage
+    var sharedChat: TwitchEventSubSharedChat?
 
     func tierAsNumber() -> Int {
-        return twitchTierAsNumber(tier: tier)
+        twitchTierAsNumber(tier: tier)
     }
 }
 
@@ -78,6 +112,78 @@ private struct NotificationChannelSubscriptionMessagePayload: Decodable {
 
 private struct NotificationChannelSubscriptionMessageMessage: Decodable {
     var payload: NotificationChannelSubscriptionMessagePayload
+}
+
+private struct NotificationChannelChatNotificationSub: Decodable {
+    var sub_tier: String
+    var is_prime: Bool
+}
+
+private struct NotificationChannelChatNotificationResub: Decodable {
+    var cumulative_months: Int
+    var streak_months: Int?
+    var sub_tier: String
+}
+
+private struct NotificationChannelChatNotificationSubGift: Decodable {
+    var sub_tier: String
+    var community_gift_id: String?
+}
+
+private struct NotificationChannelChatNotificationCommunitySubGift: Decodable {
+    var total: Int
+    var sub_tier: String
+}
+
+private struct NotificationChannelChatNotificationPrimePaidUpgrade: Decodable {
+    var sub_tier: String
+}
+
+private struct NotificationChannelChatNotificationWatchStreak: Decodable {
+    var streak_count: Int
+}
+
+private struct NotificationChannelChatNotificationRaid: Decodable {
+    var user_id: String
+    var user_name: String
+    var viewer_count: Int
+}
+
+private struct NotificationChannelChatNotificationEvent: Decodable {
+    var chatter_user_name: String
+    var chatter_is_anonymous: Bool
+    var source_broadcaster_user_id: String?
+    var source_broadcaster_user_name: String?
+    var message: TwitchEventSubMessage
+    var notice_type: String
+    var sub: NotificationChannelChatNotificationSub?
+    var resub: NotificationChannelChatNotificationResub?
+    var sub_gift: NotificationChannelChatNotificationSubGift?
+    var community_sub_gift: NotificationChannelChatNotificationCommunitySubGift?
+    var prime_paid_upgrade: NotificationChannelChatNotificationPrimePaidUpgrade?
+    var watch_streak: NotificationChannelChatNotificationWatchStreak?
+    var shared_chat_sub: NotificationChannelChatNotificationSub?
+    var shared_chat_resub: NotificationChannelChatNotificationResub?
+    var shared_chat_sub_gift: NotificationChannelChatNotificationSubGift?
+    var shared_chat_community_sub_gift: NotificationChannelChatNotificationCommunitySubGift?
+    var shared_chat_prime_paid_upgrade: NotificationChannelChatNotificationPrimePaidUpgrade?
+    var shared_chat_raid: NotificationChannelChatNotificationRaid?
+
+    func sharedChat() -> TwitchEventSubSharedChat? {
+        guard let source_broadcaster_user_id, let source_broadcaster_user_name else {
+            return nil
+        }
+        return TwitchEventSubSharedChat(broadcasterUserId: source_broadcaster_user_id,
+                                        broadcasterUserName: source_broadcaster_user_name)
+    }
+}
+
+private struct NotificationChannelChatNotificationPayload: Decodable {
+    var event: NotificationChannelChatNotificationEvent
+}
+
+private struct NotificationChannelChatNotificationMessage: Decodable {
+    var payload: NotificationChannelChatNotificationPayload
 }
 
 struct TwitchEventSubNotificationChannelFollowEvent: Decodable {
@@ -135,6 +241,7 @@ struct TwitchEventSubChannelRaidEvent: Decodable {
     var from_broadcaster_user_id: String
     var from_broadcaster_user_name: String
     var viewers: Int
+    var sharedChat: TwitchEventSubSharedChat?
 }
 
 private struct NotificationChannelRaidPayload: Decodable {
@@ -211,6 +318,53 @@ private struct NotificationChannelHypeTrainEndMessage: Decodable {
     var payload: NotificationChannelHypeTrainEndPayload
 }
 
+struct TwitchEventSubChannelPollChoice: Decodable {
+    var id: String
+    var title: String
+    var votes: Int?
+}
+
+struct TwitchEventSubChannelPollEvent: Decodable {
+    var id: String
+    var title: String
+    var choices: [TwitchEventSubChannelPollChoice]
+    var ends_at: String?
+    var status: String?
+}
+
+private struct NotificationChannelPollPayload: Decodable {
+    var event: TwitchEventSubChannelPollEvent
+}
+
+private struct NotificationChannelPollMessage: Decodable {
+    var payload: NotificationChannelPollPayload
+}
+
+struct TwitchEventSubChannelPredictionOutcome: Decodable {
+    var id: String
+    var title: String
+    var color: String
+    var users: Int?
+    var channel_points: Int?
+}
+
+struct TwitchEventSubChannelPredictionEvent: Decodable {
+    var id: String
+    var title: String
+    var outcomes: [TwitchEventSubChannelPredictionOutcome]
+    var locks_at: String?
+    var winning_outcome_id: String?
+    var status: String?
+}
+
+private struct NotificationChannelPredictionPayload: Decodable {
+    var event: TwitchEventSubChannelPredictionEvent
+}
+
+private struct NotificationChannelPredictionMessage: Decodable {
+    var payload: NotificationChannelPredictionPayload
+}
+
 struct TwitchEventSubChannelAdBreakBeginEvent: Decodable {
     var duration_seconds: Int
     var is_automatic: Bool
@@ -242,7 +396,7 @@ private struct NotificationChannelModerateMessage: Decodable {
     var payload: NotificationChannelModeratePayload
 }
 
-private var url = URL(string: "wss://eventsub.wss.twitch.tv/ws")!
+private let url = URL(string: "wss://eventsub.wss.twitch.tv/ws")!
 
 protocol TwitchEventSubDelegate: AnyObject {
     func twitchEventSubChannelFollow(event: TwitchEventSubNotificationChannelFollowEvent)
@@ -251,6 +405,10 @@ protocol TwitchEventSubDelegate: AnyObject {
     func twitchEventSubChannelSubscriptionMessage(
         event: TwitchEventSubNotificationChannelSubscriptionMessageEvent
     )
+    func twitchEventSubChannelSubscriptionUpgrade(
+        event: TwitchEventSubNotificationChannelSubscriptionUpgradeEvent
+    )
+    func twitchEventSubChannelWatchStreak(event: TwitchEventSubNotificationChannelWatchStreakEvent)
     func twitchEventSubChannelPointsCustomRewardRedemptionAdd(
         event: TwitchEventSubNotificationChannelPointsCustomRewardRedemptionAddEvent
     )
@@ -260,6 +418,13 @@ protocol TwitchEventSubDelegate: AnyObject {
     func twitchEventSubChannelHypeTrainProgress(event: TwitchEventSubChannelHypeTrainProgressEvent)
     func twitchEventSubChannelHypeTrainEnd(event: TwitchEventSubChannelHypeTrainEndEvent)
     func twitchEventSubChannelAdBreakBegin(event: TwitchEventSubChannelAdBreakBeginEvent)
+    func twitchEventSubChannelPollBegin(event: TwitchEventSubChannelPollEvent)
+    func twitchEventSubChannelPollProgress(event: TwitchEventSubChannelPollEvent)
+    func twitchEventSubChannelPollEnd(event: TwitchEventSubChannelPollEvent)
+    func twitchEventSubChannelPredictionBegin(event: TwitchEventSubChannelPredictionEvent)
+    func twitchEventSubChannelPredictionProgress(event: TwitchEventSubChannelPredictionEvent)
+    func twitchEventSubChannelPredictionLock(event: TwitchEventSubChannelPredictionEvent)
+    func twitchEventSubChannelPredictionEnd(event: TwitchEventSubChannelPredictionEvent)
     func twitchEventSubChannelModerate(event: TwitchEventSubChannelModerateEvent)
     func twitchEventSubUnauthorized()
     func twitchEventSubNotification(message: String)
@@ -269,6 +434,7 @@ private let subTypeChannelFollow = "channel.follow"
 private let subTypeChannelSubscribe = "channel.subscribe"
 private let subTypeChannelSubscriptionGift = "channel.subscription.gift"
 private let subTypeChannelSubscriptionMessage = "channel.subscription.message"
+private let subTypeChannelChatNotification = "channel.chat.notification"
 private let subTypeChannelChannelPointsCustomRewardRedemptionAdd =
     "channel.channel_points_custom_reward_redemption.add"
 private let subTypeChannelRaid = "channel.raid"
@@ -278,6 +444,13 @@ private let subTypeChannelHypeTrainProgress = "channel.hype_train.progress"
 private let subTypeChannelHypeTrainEnd = "channel.hype_train.end"
 private let subTypeChannelAdBreakBegin = "channel.ad_break.begin"
 private let subTypeChannelModerate = "channel.moderate"
+private let subTypeChannelPollBegin = "channel.poll.begin"
+private let subTypeChannelPollProgress = "channel.poll.progress"
+private let subTypeChannelPollEnd = "channel.poll.end"
+private let subTypeChannelPredictionBegin = "channel.prediction.begin"
+private let subTypeChannelPredictionProgress = "channel.prediction.progress"
+private let subTypeChannelPredictionLock = "channel.prediction.lock"
+private let subTypeChannelPredictionEnd = "channel.prediction.end"
 
 final class TwitchEventSub: NSObject {
     private var webSocket: WebSocketClient
@@ -294,7 +467,7 @@ final class TwitchEventSub: NSObject {
         remoteControl: Bool,
         userId: String,
         accessToken: String,
-        delegate: TwitchEventSubDelegate
+        delegate: any TwitchEventSubDelegate
     ) {
         self.remoteControl = remoteControl
         self.userId = userId
@@ -309,10 +482,10 @@ final class TwitchEventSub: NSObject {
         logger.debug("twitch: event-sub: Start")
         stopInternal()
         connectDelayTimer.startSingleShot(timeout: 2.0) { [weak self] in
-            guard let self, self.started else {
+            guard let self, started else {
                 return
             }
-            self.connect()
+            connect()
         }
         started = true
     }
@@ -331,7 +504,7 @@ final class TwitchEventSub: NSObject {
     }
 
     func isConnected() -> Bool {
-        return connected
+        connected
     }
 
     func handleMessage(messageText: String) {
@@ -379,24 +552,20 @@ final class TwitchEventSub: NSObject {
             guard ok else {
                 return
             }
-            self.subscribeToChannelSubscribe()
+            self.subscribeToChannelChatNotification()
         }
     }
 
-    private func subscribeToChannelSubscribe() {
-        subscribeBroadcasterUserId(type: subTypeChannelSubscribe) {
-            self.subscribeToChannelSubscriptionGift()
-        }
-    }
-
-    private func subscribeToChannelSubscriptionGift() {
-        subscribeBroadcasterUserId(type: subTypeChannelSubscriptionGift) {
-            self.subscribeToChannelSubscriptionMessage()
-        }
-    }
-
-    private func subscribeToChannelSubscriptionMessage() {
-        subscribeBroadcasterUserId(type: subTypeChannelSubscriptionMessage) {
+    private func subscribeToChannelChatNotification() {
+        let body = createBody(
+            type: subTypeChannelChatNotification,
+            version: 1,
+            condition: "{\"broadcaster_user_id\":\"\(userId)\",\"user_id\":\"\(userId)\"}"
+        )
+        twitchApi.createEventSubSubscription(body: body) { ok in
+            guard ok else {
+                return
+            }
             self.subscribeToChannelPointsCustomRewardRedemptionAdd()
         }
     }
@@ -471,6 +640,48 @@ final class TwitchEventSub: NSObject {
             guard ok else {
                 return
             }
+            self.subscribeToChannelPollBegin()
+        }
+    }
+
+    private func subscribeToChannelPollBegin() {
+        subscribeBroadcasterUserId(type: subTypeChannelPollBegin) {
+            self.subscribeToChannelPollProgress()
+        }
+    }
+
+    private func subscribeToChannelPollProgress() {
+        subscribeBroadcasterUserId(type: subTypeChannelPollProgress) {
+            self.subscribeToChannelPollEnd()
+        }
+    }
+
+    private func subscribeToChannelPollEnd() {
+        subscribeBroadcasterUserId(type: subTypeChannelPollEnd) {
+            self.subscribeToChannelPredictionBegin()
+        }
+    }
+
+    private func subscribeToChannelPredictionBegin() {
+        subscribeBroadcasterUserId(type: subTypeChannelPredictionBegin) {
+            self.subscribeToChannelPredictionProgress()
+        }
+    }
+
+    private func subscribeToChannelPredictionProgress() {
+        subscribeBroadcasterUserId(type: subTypeChannelPredictionProgress) {
+            self.subscribeToChannelPredictionLock()
+        }
+    }
+
+    private func subscribeToChannelPredictionLock() {
+        subscribeBroadcasterUserId(type: subTypeChannelPredictionLock) {
+            self.subscribeToChannelPredictionEnd()
+        }
+    }
+
+    private func subscribeToChannelPredictionEnd() {
+        subscribeBroadcasterUserId(type: subTypeChannelPredictionEnd) {
             self.connected = true
         }
     }
@@ -490,7 +701,7 @@ final class TwitchEventSub: NSObject {
     }
 
     private func createBody(type: String, version: Int, condition: String) -> String {
-        return """
+        """
         {
             "type": "\(type)",
             "version": "\(version)",
@@ -504,9 +715,9 @@ final class TwitchEventSub: NSObject {
     }
 
     private func createBroadcasterUserIdBody(type: String, version: Int = 1) -> String {
-        return createBody(type: type,
-                          version: version,
-                          condition: "{\"broadcaster_user_id\":\"\(userId)\"}")
+        createBody(type: type,
+                   version: version,
+                   condition: "{\"broadcaster_user_id\":\"\(userId)\"}")
     }
 
     private func handleNotification(message: BasicMessage, messageText: String, messageData: Data) {
@@ -520,6 +731,8 @@ final class TwitchEventSub: NSObject {
                 try handleNotificationChannelSubscriptionGift(messageData: messageData)
             case subTypeChannelSubscriptionMessage:
                 try handleNotificationChannelSubscriptionMessage(messageData: messageData)
+            case subTypeChannelChatNotification:
+                try handleNotificationChannelChatNotification(messageData: messageData)
             case subTypeChannelChannelPointsCustomRewardRedemptionAdd:
                 try handleChannelPointsCustomRewardRedemptionAdd(messageData: messageData)
             case subTypeChannelRaid:
@@ -536,6 +749,20 @@ final class TwitchEventSub: NSObject {
                 try handleChannelAdBreakBegin(messageData: messageData)
             case subTypeChannelModerate:
                 try handleChannelModerate(messageData: messageData)
+            case subTypeChannelPollBegin:
+                try handleChannelPollBegin(messageData: messageData)
+            case subTypeChannelPollProgress:
+                try handleChannelPollProgress(messageData: messageData)
+            case subTypeChannelPollEnd:
+                try handleChannelPollEnd(messageData: messageData)
+            case subTypeChannelPredictionBegin:
+                try handleChannelPredictionBegin(messageData: messageData)
+            case subTypeChannelPredictionProgress:
+                try handleChannelPredictionProgress(messageData: messageData)
+            case subTypeChannelPredictionLock:
+                try handleChannelPredictionLock(messageData: messageData)
+            case subTypeChannelPredictionEnd:
+                try handleChannelPredictionEnd(messageData: messageData)
             default:
                 if let type = message.metadata.subscription_type {
                     logger.info("twitch: event-sub: Unknown notification type \(type)")
@@ -580,6 +807,133 @@ final class TwitchEventSub: NSObject {
             from: messageData
         )
         delegate.twitchEventSubChannelSubscriptionMessage(event: message.payload.event)
+    }
+
+    private func handleNotificationChannelChatNotification(messageData: Data) throws {
+        let message = try JSONDecoder().decode(
+            NotificationChannelChatNotificationMessage.self,
+            from: messageData
+        )
+        let event = message.payload.event
+        switch event.notice_type {
+        case "sub", "shared_chat_sub":
+            handleChatNotificationSub(event: event)
+        case "resub", "shared_chat_resub":
+            handleChatNotificationResub(event: event)
+        case "sub_gift", "shared_chat_sub_gift":
+            handleChatNotificationSubGift(event: event)
+        case "community_sub_gift", "shared_chat_community_sub_gift":
+            handleChatNotificationCommunitySubGift(event: event)
+        case "prime_paid_upgrade", "shared_chat_prime_paid_upgrade":
+            handleChatNotificationPrimePaidUpgrade(event: event)
+        case "gift_paid_upgrade", "shared_chat_gift_paid_upgrade":
+            handleChatNotificationGiftPaidUpgrade(event: event)
+        case "shared_chat_raid":
+            handleChatNotificationRaid(event: event)
+        case "watch_streak":
+            handleChatNotificationWatchStreak(event: event)
+        default:
+            break
+        }
+    }
+
+    private func handleChatNotificationSub(event: NotificationChannelChatNotificationEvent) {
+        guard let sub = event.sub ?? event.shared_chat_sub else {
+            return
+        }
+        delegate.twitchEventSubChannelSubscribe(event: .init(user_name: event.chatter_user_name,
+                                                             tier: sub.sub_tier,
+                                                             is_gift: false,
+                                                             is_prime: sub.is_prime,
+                                                             sharedChat: event.sharedChat()))
+    }
+
+    private func handleChatNotificationResub(event: NotificationChannelChatNotificationEvent) {
+        guard let resub = event.resub ?? event.shared_chat_resub else {
+            return
+        }
+        delegate.twitchEventSubChannelSubscriptionMessage(
+            event: .init(user_name: event.chatter_user_name,
+                         cumulative_months: resub.cumulative_months,
+                         streak_months: resub.streak_months,
+                         tier: resub.sub_tier,
+                         message: event.message,
+                         sharedChat: event.sharedChat())
+        )
+    }
+
+    private func handleChatNotificationSubGift(event: NotificationChannelChatNotificationEvent) {
+        guard let subGift = event.sub_gift ?? event.shared_chat_sub_gift,
+              subGift.community_gift_id == nil
+        else {
+            return
+        }
+        handleChatNotificationGift(event: event, total: 1, tier: subGift.sub_tier)
+    }
+
+    private func handleChatNotificationCommunitySubGift(event: NotificationChannelChatNotificationEvent) {
+        guard let communitySubGift = event.community_sub_gift ?? event.shared_chat_community_sub_gift
+        else {
+            return
+        }
+        handleChatNotificationGift(event: event,
+                                   total: communitySubGift.total,
+                                   tier: communitySubGift.sub_tier)
+    }
+
+    private func handleChatNotificationPrimePaidUpgrade(event: NotificationChannelChatNotificationEvent) {
+        guard let primePaidUpgrade = event.prime_paid_upgrade ?? event.shared_chat_prime_paid_upgrade
+        else {
+            return
+        }
+        delegate.twitchEventSubChannelSubscriptionUpgrade(
+            event: .init(user_name: event.chatter_user_name,
+                         tier: primePaidUpgrade.sub_tier,
+                         sharedChat: event.sharedChat())
+        )
+    }
+
+    private func handleChatNotificationGiftPaidUpgrade(event: NotificationChannelChatNotificationEvent) {
+        delegate.twitchEventSubChannelSubscriptionUpgrade(
+            event: .init(user_name: event.chatter_user_name, tier: nil, sharedChat: event.sharedChat())
+        )
+    }
+
+    private func handleChatNotificationRaid(event: NotificationChannelChatNotificationEvent) {
+        guard let raid = event.shared_chat_raid else {
+            return
+        }
+        delegate.twitchEventSubChannelRaid(
+            event: .init(from_broadcaster_user_id: raid.user_id,
+                         from_broadcaster_user_name: raid.user_name,
+                         viewers: raid.viewer_count,
+                         sharedChat: event.sharedChat())
+        )
+    }
+
+    private func handleChatNotificationWatchStreak(event: NotificationChannelChatNotificationEvent) {
+        guard let watchStreak = event.watch_streak else {
+            return
+        }
+        delegate.twitchEventSubChannelWatchStreak(
+            event: .init(user_name: event.chatter_user_name,
+                         streak_count: watchStreak.streak_count,
+                         message: event.message,
+                         sharedChat: event.sharedChat())
+        )
+    }
+
+    private func handleChatNotificationGift(
+        event: NotificationChannelChatNotificationEvent,
+        total: Int,
+        tier: String
+    ) {
+        delegate.twitchEventSubChannelSubscriptionGift(
+            event: .init(user_name: event.chatter_is_anonymous ? nil : event.chatter_user_name,
+                         total: total,
+                         tier: tier,
+                         sharedChat: event.sharedChat())
+        )
     }
 
     private func handleChannelPointsCustomRewardRedemptionAdd(messageData: Data) throws {
@@ -636,6 +990,41 @@ final class TwitchEventSub: NSObject {
             from: messageData
         )
         delegate.twitchEventSubChannelAdBreakBegin(event: message.payload.event)
+    }
+
+    private func handleChannelPollBegin(messageData: Data) throws {
+        let message = try JSONDecoder().decode(NotificationChannelPollMessage.self, from: messageData)
+        delegate.twitchEventSubChannelPollBegin(event: message.payload.event)
+    }
+
+    private func handleChannelPollProgress(messageData: Data) throws {
+        let message = try JSONDecoder().decode(NotificationChannelPollMessage.self, from: messageData)
+        delegate.twitchEventSubChannelPollProgress(event: message.payload.event)
+    }
+
+    private func handleChannelPollEnd(messageData: Data) throws {
+        let message = try JSONDecoder().decode(NotificationChannelPollMessage.self, from: messageData)
+        delegate.twitchEventSubChannelPollEnd(event: message.payload.event)
+    }
+
+    private func handleChannelPredictionBegin(messageData: Data) throws {
+        let message = try JSONDecoder().decode(NotificationChannelPredictionMessage.self, from: messageData)
+        delegate.twitchEventSubChannelPredictionBegin(event: message.payload.event)
+    }
+
+    private func handleChannelPredictionProgress(messageData: Data) throws {
+        let message = try JSONDecoder().decode(NotificationChannelPredictionMessage.self, from: messageData)
+        delegate.twitchEventSubChannelPredictionProgress(event: message.payload.event)
+    }
+
+    private func handleChannelPredictionLock(messageData: Data) throws {
+        let message = try JSONDecoder().decode(NotificationChannelPredictionMessage.self, from: messageData)
+        delegate.twitchEventSubChannelPredictionLock(event: message.payload.event)
+    }
+
+    private func handleChannelPredictionEnd(messageData: Data) throws {
+        let message = try JSONDecoder().decode(NotificationChannelPredictionMessage.self, from: messageData)
+        delegate.twitchEventSubChannelPredictionEnd(event: message.payload.event)
     }
 
     private func handleChannelModerate(messageData: Data) throws {

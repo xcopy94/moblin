@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import AVKit
 import MapKit
 import Network
@@ -25,7 +25,7 @@ extension CVBuffer: @unchecked @retroactive Sendable {}
 
 extension String {
     func trim() -> String {
-        return trimmingCharacters(in: .whitespacesAndNewlines)
+        trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func substring(begin: Int, end: Int) -> String {
@@ -33,11 +33,15 @@ extension String {
         let endIndex = index(startIndex, offsetBy: end)
         return String(self[beginIndex ..< endIndex])
     }
+
+    func replace(_ of: String, _ with: String) -> String {
+        replacingOccurrences(of: of, with: with)
+    }
 }
 
 extension Substring {
     func trim() -> String {
-        return trimmingCharacters(in: .whitespacesAndNewlines)
+        trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -58,7 +62,7 @@ func makeRtmpStreamKey(url: String) -> String {
 }
 
 func cleanUrl(url value: String) -> String {
-    let stripped = value.replacingOccurrences(of: " ", with: "")
+    let stripped = value.replace(" ", "")
     guard var components = URLComponents(string: stripped) else {
         return stripped
     }
@@ -68,14 +72,14 @@ func cleanUrl(url value: String) -> String {
 
 func replaceSensitive(value: String, sensitive: Bool) -> String {
     if sensitive {
-        return value.replacing(/./, with: "•")
+        value.replacing(/./, with: "•")
     } else {
-        return value
+        value
     }
 }
 
 var countFormatter: IntegerFormatStyle<Int> {
-    return IntegerFormatStyle<Int>().notation(.compactName)
+    IntegerFormatStyle<Int>().notation(.compactName)
 }
 
 var sizeFormatter: ByteCountFormatter {
@@ -103,8 +107,8 @@ var speedFormatterUnit: ByteCountFormatter {
 func formatBytesPerSecond(speed: Int64) -> String {
     let value = speedFormatterValue.string(fromByteCount: speed)
     var unit = speedFormatterUnit.string(fromByteCount: speed)
-    unit = unit.replacingOccurrences(of: "bytes", with: "bps")
-    unit = unit.replacingOccurrences(of: "byte", with: "bps")
+    unit = unit.replace("bytes", "bps")
+    unit = unit.replace("byte", "bps")
     if unit.count == 2 {
         unit = "\(unit.remove(at: unit.startIndex))bps"
     }
@@ -140,33 +144,37 @@ private func createDurationFormatter() -> DateComponentsFormatter {
 let durationFormatter = createDurationFormatter()
 
 func formatDate(_ dateString: String) -> String? {
-    return try? Date.ISO8601FormatStyle()
+    try? Date.ISO8601FormatStyle()
         .parse(dateString)
         .formatted(date: .abbreviated, time: .omitted)
 }
 
+func formatDate(_ date: Date) -> String {
+    date.formatted(date: .numeric, time: .omitted)
+}
+
 extension Duration {
     func format() -> String {
-        return durationFormatter.string(from: Double(components.seconds))!
+        durationFormatter.string(from: Double(components.seconds))!
     }
 
     func formatWithSeconds() -> String {
-        return uptimeFormatter.string(from: Double(components.seconds))!
+        uptimeFormatter.string(from: Double(components.seconds))!
     }
 }
 
-private func createFullDurationFormatter() -> DateComponentsFormatter {
+private func createShortDurationFormatter() -> DateComponentsFormatter {
     let formatter = DateComponentsFormatter()
     formatter.allowedUnits = [.day, .hour, .minute, .second]
-    formatter.unitsStyle = .full
+    formatter.unitsStyle = .short
     formatter.referenceDate = Date(timeIntervalSince1970: 0)
     return formatter
 }
 
-private let fullDurationFormatter = createFullDurationFormatter()
+private let shortDurationFormatter = createShortDurationFormatter()
 
-func formatFullDuration(seconds: Int) -> String {
-    return fullDurationFormatter.string(from: Double(seconds)) ?? ""
+func formatShortDuration(seconds: Int) -> String {
+    shortDurationFormatter.string(from: Double(seconds)) ?? ""
 }
 
 private func createSpeedFormatter() -> MeasurementFormatter {
@@ -175,11 +183,9 @@ private func createSpeedFormatter() -> MeasurementFormatter {
     return formatter
 }
 
-private let speedFormatter = createSpeedFormatter()
-
 func format(speed: Double) -> String {
     let measurement = Measurement(value: max(speed, 0), unit: UnitSpeed.metersPerSecond)
-    return speedFormatter.string(from: measurement)
+    return createSpeedFormatter().string(from: measurement)
 }
 
 private func createWindSpeedFormatter() -> MeasurementFormatter {
@@ -189,15 +195,16 @@ private func createWindSpeedFormatter() -> MeasurementFormatter {
     return formatter
 }
 
-private let windSpeedFormatter = createWindSpeedFormatter()
-
-func formatWindSpeed(speed: Measurement<UnitSpeed>) -> String {
-    let unit: UnitSpeed = Locale.current.measurementSystem == .metric ? .metersPerSecond : .milesPerHour
-    return windSpeedFormatter.string(from: speed.converted(to: unit))
+func formatWindSpeed(speed: Measurement<UnitSpeed>, unit: UnitSpeed?) -> String {
+    let unit = unit ?? (Locale.current.measurementSystem == .metric ? .metersPerSecond : .milesPerHour)
+    return createWindSpeedFormatter().string(from: speed.converted(to: unit))
 }
 
-func formatWindAndGustSpeed(speed: Measurement<UnitSpeed>, gust: Measurement<UnitSpeed>) -> String {
-    let unit: UnitSpeed = Locale.current.measurementSystem == .metric ? .metersPerSecond : .milesPerHour
+func formatWindAndGustSpeed(speed: Measurement<UnitSpeed>,
+                            gust: Measurement<UnitSpeed>,
+                            unit: UnitSpeed?) -> String
+{
+    let unit = unit ?? (Locale.current.measurementSystem == .metric ? .metersPerSecond : .milesPerHour)
     let speed = Int(speed.converted(to: unit).value)
     let gust = Int(gust.converted(to: unit).value)
     return "\(speed) (\(gust)) \(unit.symbol)"
@@ -224,85 +231,74 @@ private func createDistanceFormatter() -> LengthFormatter {
     return formatter
 }
 
-private let distanceFormatter = createDistanceFormatter()
-
 func format(distance: Double) -> String {
-    return distanceFormatter.string(fromMeters: distance)
-}
-
-private func createAltitudeFormatter() -> MeasurementFormatter {
-    let formatter = MeasurementFormatter()
-    var options: MeasurementFormatter.UnitOptions = []
-    options.insert(.providedUnit)
-    formatter.unitOptions = options
-    formatter.numberFormatter.maximumFractionDigits = 0
-    return formatter
-}
-
-private let altitudeFormatter = createAltitudeFormatter()
-
-func format(altitude: Double) -> String {
-    var measurement = Measurement(value: altitude, unit: UnitLength.meters)
-    if UnitLength(forLocale: .current) == .feet {
-        measurement = measurement.converted(to: .feet)
-    }
-    return altitudeFormatter.string(from: measurement)
+    createDistanceFormatter().string(fromMeters: distance)
 }
 
 extension ProcessInfo.ThermalState {
     func string() -> String {
         switch self {
         case .nominal:
-            return "nominal"
+            "nominal"
         case .fair:
-            return "fair"
+            "fair"
         case .serious:
-            return "serious"
+            "serious"
         case .critical:
-            return "critical"
+            "critical"
         default:
-            return "unknown"
+            "unknown"
         }
     }
 }
 
 func appVersion() -> String {
-    return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-"
+    Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-"
 }
 
-func formatOneDecimal(_ value: Float) -> String {
-    return String(format: "%.01f", value)
+func formatOneDecimal(_ value: some BinaryFloatingPoint) -> String {
+    String(format: "%.01f", Double(value))
 }
 
-func formatTwoDecimals(_ value: Double) -> String {
-    return String(format: "%.02f", value)
+func formatTwoDecimals(_ value: some BinaryFloatingPoint) -> String {
+    String(format: "%.02f", Double(value))
 }
 
-func formatThreeDecimals(_ value: Double) -> String {
-    return String(format: "%.03f", value)
+func formatThreeDecimals(_ value: some BinaryFloatingPoint) -> String {
+    String(format: "%.03f", Double(value))
+}
+
+func formatFourDecimals(_ value: some BinaryFloatingPoint) -> String {
+    String(format: "%.04f", Double(value))
 }
 
 extension Comparable {
     func clamped(to limits: ClosedRange<Self>) -> Self {
-        return min(max(self, limits.lowerBound), limits.upperBound)
+        min(max(self, limits.lowerBound), limits.upperBound)
+    }
+}
+
+extension FloatingPoint {
+    func clamped(to limits: ClosedRange<Self>) -> Self {
+        isNaN ? limits.lowerBound : min(max(self, limits.lowerBound), limits.upperBound)
     }
 }
 
 func bitrateToMbps(bitrate: UInt32) -> Float {
-    return Float(bitrate) / 1_000_000
+    Float(bitrate) / 1_000_000
 }
 
 func bitrateFromMbps(bitrate: Float) -> UInt32 {
-    return UInt32(bitrate * 1_000_000)
+    UInt32(bitrate * 1_000_000)
 }
 
 extension FloatingPoint {
     func toRadians() -> Self {
-        return self * .pi / 180
+        self * .pi / 180
     }
 
     func toDegrees() -> Self {
-        return self * 180 / .pi
+        self * 180 / .pi
     }
 }
 
@@ -313,21 +309,29 @@ func diffAngles<T: FloatingPoint>(_ one: T, _ two: T) -> T {
 
 extension URLResponse {
     var http: HTTPURLResponse? {
-        return self as? HTTPURLResponse
+        self as? HTTPURLResponse
     }
 }
 
 extension HTTPURLResponse {
     var isSuccessful: Bool {
-        return 200 ... 299 ~= statusCode
+        200 ... 299 ~= statusCode
     }
 
     var isNotFound: Bool {
-        return statusCode == 404
+        statusCode == 404
     }
 
     var isUnauthorized: Bool {
-        return statusCode == 401
+        statusCode == 401
+    }
+
+    var isForbidden: Bool {
+        statusCode == 403
+    }
+
+    var isTooManyRequests: Bool {
+        statusCode == 429
     }
 }
 
@@ -363,7 +367,7 @@ let smallFont = Font.system(size: 13)
 
 extension UInt64 {
     func formatBytes() -> String {
-        return sizeFormatter.string(fromByteCount: Int64(self))
+        sizeFormatter.string(fromByteCount: Int64(self))
     }
 }
 
@@ -371,15 +375,15 @@ extension ProcessInfo.ThermalState {
     func color() -> Color {
         switch self {
         case .nominal:
-            return .white
+            .white
         case .fair:
-            return .white
+            .white
         case .serious:
-            return .yellow
+            .yellow
         case .critical:
-            return .red
+            .red
         default:
-            return .pink
+            .pink
         }
     }
 }
@@ -399,7 +403,7 @@ extension ExpressibleByIntegerLiteral {
 
 extension UnsignedInteger {
     func isBitSet(index: Int) -> Bool {
-        return ((self >> index) & 1) == 1
+        ((self >> index) & 1) == 1
     }
 }
 
@@ -424,38 +428,38 @@ extension Data {
     }
 
     func hexString() -> String {
-        return map { String(format: "%02hhx", $0) }.joined()
+        map { String(format: "%02hhx", $0) }.joined()
     }
 
     func getInt64Be(offset: Int = 0) -> Int64 {
-        return Int64(UInt64(getFourBytesBe(offset: offset)) << 32 |
+        Int64(bitPattern: UInt64(getFourBytesBe(offset: offset)) << 32 |
             UInt64(getFourBytesBe(offset: offset + 4)))
     }
 
     func getUInt32Be(offset: Int = 0) -> UInt32 {
-        return withUnsafeBytes { data in
+        withUnsafeBytes { data in
             data.load(fromByteOffset: offset, as: UInt32.self)
         }.bigEndian
     }
 
     func getUInt16Be(offset: Int = 0) -> UInt16 {
-        return withUnsafeBytes { data in
+        withUnsafeBytes { data in
             data.load(fromByteOffset: offset, as: UInt16.self)
         }.bigEndian
     }
 
     func getThreeBytesBe(offset: Int = 0) -> UInt32 {
-        return UInt32(self[offset]) << 16 | UInt32(self[offset + 1]) << 8 | UInt32(self[offset + 2])
+        UInt32(self[offset]) << 16 | UInt32(self[offset + 1]) << 8 | UInt32(self[offset + 2])
     }
 
     func getFourBytesBe(offset: Int = 0) -> UInt32 {
-        return UInt32(self[offset]) << 24 | UInt32(self[offset + 1]) << 16 | UInt32(self[offset + 2]) <<
+        UInt32(self[offset]) << 24 | UInt32(self[offset + 1]) << 16 | UInt32(self[offset + 2]) <<
             8 |
             UInt32(self[offset + 3])
     }
 
     func getFourBytesLe(offset: Int = 0) -> UInt32 {
-        return UInt32(self[offset + 3]) << 24 | UInt32(self[offset + 2]) << 16 |
+        UInt32(self[offset + 3]) << 24 | UInt32(self[offset + 2]) << 16 |
             UInt32(self[offset + 1]) <<
             8 |
             UInt32(self[offset + 0])
@@ -485,12 +489,15 @@ extension Data {
         ) }
     }
 
-    func makeBlockBuffer(advancedBy: Int = 0) -> CMBlockBuffer? {
+    func makeBlockBuffer(advancedBy: Int = 0, length: Int? = nil) -> CMBlockBuffer? {
         var blockBuffer: CMBlockBuffer?
         guard advancedBy < count else {
             return nil
         }
-        let length = count - advancedBy
+        let length = length ?? (count - advancedBy)
+        guard advancedBy + length <= count else {
+            return nil
+        }
         return withUnsafeBytes { (buffer: UnsafeRawBufferPointer) -> CMBlockBuffer? in
             guard let baseAddress = buffer.baseAddress else {
                 return nil
@@ -523,6 +530,7 @@ extension Data {
 
 private let cameraPositionRtmp = "(RTMP)"
 private let cameraPositionSrtla = "(SRT(LA))"
+private let cameraPositionSrtClient = "(SRT client)"
 private let cameraPositionRist = "(RIST)"
 private let cameraPositionRtsp = "(RTSP)"
 private let cameraPositionWhip = "(WHIP)"
@@ -530,81 +538,89 @@ private let cameraPositionWhep = "(WHEP)"
 private let cameraPositionMediaPlayer = "(Media player)"
 
 func rtmpCamera(name: String) -> String {
-    return "\(name) \(cameraPositionRtmp)"
+    "\(name) \(cameraPositionRtmp)"
 }
 
 func isRtmpCameraOrMic(camera: String) -> Bool {
-    return camera.hasSuffix(cameraPositionRtmp)
+    camera.hasSuffix(cameraPositionRtmp)
 }
 
 func srtlaCamera(name: String) -> String {
-    return "\(name) \(cameraPositionSrtla)"
+    "\(name) \(cameraPositionSrtla)"
 }
 
 func isSrtlaCameraOrMic(camera: String) -> Bool {
-    return camera.hasSuffix(cameraPositionSrtla)
+    camera.hasSuffix(cameraPositionSrtla)
+}
+
+func srtClientCamera(name: String) -> String {
+    "\(name) \(cameraPositionSrtClient)"
+}
+
+func isSrtClientCameraOrMic(camera: String) -> Bool {
+    camera.hasSuffix(cameraPositionSrtClient)
 }
 
 func ristCamera(name: String) -> String {
-    return "\(name) \(cameraPositionRist)"
+    "\(name) \(cameraPositionRist)"
 }
 
 func isRistCameraOrMic(camera: String) -> Bool {
-    return camera.hasSuffix(cameraPositionRist)
+    camera.hasSuffix(cameraPositionRist)
 }
 
 func rtspCamera(name: String) -> String {
-    return "\(name) \(cameraPositionRtsp)"
+    "\(name) \(cameraPositionRtsp)"
 }
 
 func isRtspCameraOrMic(camera: String) -> Bool {
-    return camera.hasSuffix(cameraPositionRtsp)
+    camera.hasSuffix(cameraPositionRtsp)
 }
 
 func whipCamera(name: String) -> String {
-    return "\(name) \(cameraPositionWhip)"
+    "\(name) \(cameraPositionWhip)"
 }
 
 func isWhipCameraOrMic(camera: String) -> Bool {
-    return camera.hasSuffix(cameraPositionWhip)
+    camera.hasSuffix(cameraPositionWhip)
 }
 
 func whepCamera(name: String) -> String {
-    return "\(name) \(cameraPositionWhep)"
+    "\(name) \(cameraPositionWhep)"
 }
 
 func isWhepCameraOrMic(camera: String) -> Bool {
-    return camera.hasSuffix(cameraPositionWhep)
+    camera.hasSuffix(cameraPositionWhep)
 }
 
 func mediaPlayerCamera(name: String) -> String {
-    return "\(name) \(cameraPositionMediaPlayer)"
+    "\(name) \(cameraPositionMediaPlayer)"
 }
 
 func isMediaPlayerCameraOrMic(camera: String) -> Bool {
-    return camera.hasSuffix(cameraPositionMediaPlayer)
+    camera.hasSuffix(cameraPositionMediaPlayer)
 }
 
 func formatAudioLevelDb(level: Float) -> String {
-    return String(localized: "\(Int(level)) dB,")
+    String(localized: "\(Int(level)) dB,")
 }
 
 func formatAudioLevel(level: Float) -> String {
     if level.isNaN {
-        return "Muted,"
+        "Muted,"
     } else if level == .infinity {
-        return "Unknown,"
+        "Unknown,"
     } else {
-        return formatAudioLevelDb(level: level)
+        formatAudioLevelDb(level: level)
     }
 }
 
 func formatAudioLevelChannels(channels: Int) -> String {
-    return String(localized: " \(channels) ch")
+    String(localized: " \(channels) ch")
 }
 
 func formatAudioLevelSampleRate(sampleRate: Double) -> String {
-    return String(localized: " \(Int(sampleRate / 1000)) kHz")
+    String(localized: " \(Int(sampleRate / 1000)) kHz")
 }
 
 let noValue = ""
@@ -618,7 +634,7 @@ func urlImage(interfaceType: NWInterface.InterfaceType) -> String {
     case .cellular:
         return "antenna.radiowaves.left.and.right"
     case .wiredEthernet:
-        return "cable.connector"
+        return "cable.coaxial"
     case .loopback:
         return "questionmark"
     @unknown default:
@@ -638,15 +654,15 @@ let moblinAppGroup = "group.com.eerimoq.Moblin"
 
 extension Duration {
     var microseconds: Int64 {
-        return components.seconds * 1_000_000 + components.attoseconds / 1_000_000_000_000
+        components.seconds * 1_000_000 + components.attoseconds / 1_000_000_000_000
     }
 
     var milliseconds: Int64 {
-        return components.seconds * 1000 + components.attoseconds / 1_000_000_000_000_000
+        components.seconds * 1000 + components.attoseconds / 1_000_000_000_000_000
     }
 
     var seconds: Double {
-        return Double(milliseconds) / 1000
+        Double(milliseconds) / 1000
     }
 }
 
@@ -659,24 +675,94 @@ extension String {
     }
 
     var utf8Data: Data {
-        return Data(utf8)
+        Data(utf8)
     }
 }
 
-class RgbColor: Codable, Equatable {
-    static func == (lhs: RgbColor, rhs: RgbColor) -> Bool {
-        return lhs.red == rhs.red && lhs.green == rhs.green && lhs.blue == rhs.blue && lhs.opacity == rhs
-            .opacity
+private func moda(_ x: CGFloat, m: CGFloat) -> CGFloat {
+    (x.truncatingRemainder(dividingBy: m) + m).truncatingRemainder(dividingBy: m)
+}
+
+private struct HSL {
+    var hue: CGFloat = 0.0
+    var saturation: CGFloat = 0.0
+    var lightness: CGFloat = 0.0
+
+    init(hue: CGFloat, saturation: CGFloat, lightness: CGFloat) {
+        self.hue = hue.truncatingRemainder(dividingBy: 360.0) / 360.0
+        self.saturation = saturation.clamped(to: 0 ... 1)
+        self.lightness = lightness.clamped(to: 0 ... 1)
     }
 
+    init(color: RgbColor) {
+        let red = CGFloat(color.red) / 255
+        let green = CGFloat(color.green) / 255
+        let blue = CGFloat(color.blue) / 255
+        let maximum = max(red, max(green, blue))
+        let minimum = min(red, min(green, blue))
+        let delta = maximum - minimum
+        hue = 0.0
+        saturation = 0.0
+        lightness = (maximum + minimum) / 2.0
+
+        if delta != 0.0 {
+            if lightness < 0.5 {
+                saturation = delta / (maximum + minimum)
+            } else {
+                saturation = delta / (2.0 - maximum - minimum)
+            }
+            if red == maximum {
+                hue = (green - blue) / delta
+                if green < blue {
+                    hue += 6.0
+                }
+            } else if green == maximum {
+                hue = ((blue - red) / delta) + 2.0
+            } else if blue == maximum {
+                hue = ((red - green) / delta) + 4.0
+            }
+        }
+        hue /= 6.0
+    }
+
+    func lighter(amount: CGFloat) -> HSL {
+        HSL(hue: hue * 360.0, saturation: saturation, lightness: lightness + amount)
+    }
+
+    func toRgbColor() -> RgbColor {
+        let m2 = if lightness <= 0.5 {
+            lightness * (saturation + 1.0)
+        } else {
+            (lightness + saturation) - (lightness * saturation)
+        }
+        let m1 = (lightness * 2.0) - m2
+        let r = hueToRGB(m1: m1, m2: m2, h: hue + (1.0 / 3.0))
+        let g = hueToRGB(m1: m1, m2: m2, h: hue)
+        let b = hueToRGB(m1: m1, m2: m2, h: hue - (1.0 / 3.0))
+        return RgbColor(red: Int(r * 255), green: Int(g * 255), blue: Int(b * 255), opacity: nil)
+    }
+
+    private func hueToRGB(m1: CGFloat, m2: CGFloat, h: CGFloat) -> CGFloat {
+        let hue = moda(h, m: 1)
+        if hue * 6 < 1.0 {
+            return m1 + ((m2 - m1) * hue * 6.0)
+        } else if hue * 2.0 < 1.0 {
+            return m2
+        } else if hue * 3.0 < 1.9999 {
+            return m1 + ((m2 - m1) * ((2.0 / 3.0) - hue) * 6.0)
+        }
+        return m1
+    }
+}
+
+struct RgbColor: Codable, Equatable {
     static let white = RgbColor(red: 255, green: 255, blue: 255)
     static let black = RgbColor(red: 0, green: 0, blue: 0)
 
-    var red: Int = 0
-    var green: Int = 0
-    var blue: Int = 0
-    // May be nil
-    var opacity: Double?
+    let red: Int
+    let green: Int
+    let blue: Int
+    let opacity: Double?
 
     init(red: Int, green: Int, blue: Int, opacity: Double? = nil) {
         self.red = red
@@ -685,46 +771,67 @@ class RgbColor: Codable, Equatable {
         self.opacity = opacity
     }
 
+    func isDark() -> Bool {
+        (red * 299) + (green * 587) + (blue * 114) < 500 * 255 / 2
+    }
+
     func makeReadableOnDarkBackground() -> RgbColor {
-        let threshold = 100
-        guard red < threshold && green < threshold && blue < threshold else {
-            return self
+        if true {
+            if isDark() {
+                return HSL(color: self).lighter(amount: 0.45).toRgbColor()
+            } else {
+                return self
+            }
+        } else {
+            let threshold = 100
+            guard red < threshold, green < threshold, blue < threshold else {
+                return self
+            }
+            return .init(red: red + threshold, green: green + threshold, blue: blue + threshold)
         }
-        return .init(red: red + threshold, green: green + threshold, blue: blue + threshold)
     }
 
     func withOpacity(opacity: Double?) -> RgbColor {
-        return RgbColor(red: red, green: green, blue: blue, opacity: opacity)
+        RgbColor(red: red, green: green, blue: blue, opacity: opacity)
     }
 
     func toHex() -> String {
-        return String(format: "#%02x%02x%02x", red, green, blue)
+        String(format: "#%02x%02x%02x", red, green, blue)
     }
 
     static func fromHex(string: String) -> RgbColor? {
         if let colorNumber = Int(string.suffix(6), radix: 16) {
-            return RgbColor(
+            RgbColor(
                 red: (colorNumber >> 16) & 0xFF,
                 green: (colorNumber >> 8) & 0xFF,
                 blue: colorNumber & 0xFF
             )
         } else {
-            return nil
+            nil
         }
     }
 }
 
 extension RgbColor {
     private func colorScale(_ color: Int) -> Double {
-        return Double(color) / 255
+        Double(color) / 255
     }
 
     func color() -> Color {
-        return Color(
+        Color(
             red: colorScale(red),
             green: colorScale(green),
             blue: colorScale(blue),
             opacity: opacity ?? 1.0
+        )
+    }
+
+    func uiColor() -> UIColor {
+        UIColor(
+            red: colorScale(red),
+            green: colorScale(green),
+            blue: colorScale(blue),
+            alpha: opacity ?? 1.0
         )
     }
 
@@ -770,20 +877,30 @@ func isSetWin(first: Int, second: Int) -> Bool {
     if first == 7 {
         return true
     }
-    if first == 6 && second <= 4 {
+    if first == 6, second <= 4 {
         return true
     }
     return false
 }
 
 extension KeyedEncodingContainer {
-    mutating func encode<T: Encodable>(_ key: KeyedEncodingContainer<K>.Key, _ value: T) throws {
+    mutating func encode(_ key: KeyedEncodingContainer<K>.Key, _ value: some Encodable) throws {
         try encode(value, forKey: key)
     }
 }
 
 extension KeyedDecodingContainer {
     func decode<T: Decodable>(_ key: KeyedDecodingContainer<K>.Key, _ type: T.Type, _ defaultValue: T) -> T {
-        return (try? decode(type, forKey: key)) ?? defaultValue
+        (try? decode(type, forKey: key)) ?? defaultValue
+    }
+
+    func decode<T: Decodable>(
+        _ key: KeyedDecodingContainer<K>.Key,
+        _ type: T.Type,
+        _ defaultValue: T,
+        _ isValid: (T) -> Bool
+    ) -> T {
+        let value = decode(key, type, defaultValue)
+        return isValid(value) ? value : defaultValue
     }
 }

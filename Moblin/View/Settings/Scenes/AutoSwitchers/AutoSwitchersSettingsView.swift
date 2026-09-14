@@ -4,12 +4,10 @@ struct SwitcherTimePickerView: View {
     @Binding var time: Int
 
     var body: some View {
-        Picker(selection: $time) {
-            ForEach([5, 10, 15, 30, 60, 120], id: \.self) {
-                Text("\($0)s")
+        Picker("Time", selection: $time) {
+            ForEach([5, 10, 15, 30, 45, 60, 90, 120, 180, 240, 300], id: \.self) {
+                Text(formatShortDuration(seconds: $0))
             }
-        } label: {
-            Text("Time")
         }
     }
 }
@@ -47,7 +45,7 @@ private struct AutoSwitcherSceneSettingsView: View {
                 DraggableItemPrefixView()
                 Text(getSceneName(sceneId: scene.sceneId))
                 Spacer()
-                Text("\(scene.time)s")
+                Text(formatShortDuration(seconds: scene.time))
             }
         }
     }
@@ -107,11 +105,7 @@ private struct AutoSwitcherSettingsItemView: View {
         NavigationLink {
             AutoSwitcherSettingsView(autoSceneSwitchers: autoSceneSwitchers, autoSwitcher: autoSwitcher)
         } label: {
-            HStack {
-                DraggableItemPrefixView()
-                Text(autoSwitcher.name)
-                Spacer()
-            }
+            DraggableItemTextView(name: autoSwitcher.name)
         }
     }
 }

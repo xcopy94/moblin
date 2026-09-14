@@ -1,4 +1,5 @@
 import Combine
+import MetalPetal
 import SwiftUI
 
 private struct BingoView: View {
@@ -7,7 +8,7 @@ private struct BingoView: View {
     let canvasSize: CGSize
 
     private func squareSize(squaresCountSide: Int) -> Double {
-        return toPixels(sceneWidget.layout.size, canvasSize.minimum()) / Double(squaresCountSide)
+        toPixels(sceneWidget.layout.size, canvasSize.minimum()) / Double(squaresCountSide)
     }
 
     var body: some View {
@@ -51,43 +52,51 @@ private struct BingoView: View {
     }
 }
 
-final class BingoCardEffect: VideoEffect {
+final class BingoCardEffect: VideoEffect, @unchecked Sendable {
     private let canvasSize: CGSize
     private var settings = SettingsWidgetBingoCard()
     private var sceneWidget = SettingsSceneWidget(widgetId: .init())
     private var sceneWidgetPipeline = SettingsSceneWidget(widgetId: .init())
     private var renderer: ImageRenderer<BingoView>?
     private var cancellable: AnyCancellable?
-    private var bingoImage: CIImage?
+    private var bingoImage: EffectImageCgImage?
 
     init(canvasSize: CGSize) {
         self.canvasSize = canvasSize
         super.init()
-        DispatchQueue.main.async {
-            self.setup()
-        }
     }
 
     func setSceneWidget(sceneWidget: SettingsSceneWidget) {
-        self.sceneWidget.layout = sceneWidget.layout
         processorPipelineQueue.async {
             self.sceneWidgetPipeline.layout = sceneWidget.layout
         }
+        self.sceneWidget.layout = sceneWidget.layout
     }
 
+    @MainActor
     func setSettings(settings: SettingsWidgetBingoCard) {
-        self.settings.update(other: settings)
+        guard settings !== self.settings else {
+            return
+        }
+        self.settings = settings
+        setup()
     }
 
     override func execute(_ image: CIImage, _: VideoEffectInfo) -> CIImage {
-        return bingoImage?
+        bingoImage?
+            .getCiImage()
             .move(sceneWidgetPipeline.layout, image.extent.size)
             .cropped(to: image.extent)
             .composited(over: image) ?? image
     }
 
+    override func executeMetalPetal(_ image: MTIImage, _: VideoEffectInfo) -> MTIImage {
+        bingoImage?.getMetalPetalImage().moveComposited(sceneWidgetPipeline.layout, image) ?? image
+    }
+
     @MainActor
     private func setup() {
+        cancellable?.cancel()
         renderer = ImageRenderer(content: BingoView(settings: settings,
                                                     sceneWidget: sceneWidget,
                                                     canvasSize: canvasSize))
@@ -95,14 +104,15 @@ final class BingoCardEffect: VideoEffect {
             guard let self else {
                 return
             }
-            self.setBingoImage(image: self.renderer?.ciImage())
+            setBingoImage(image: renderer?.cgImage)
         }
-        setBingoImage(image: renderer?.ciImage())
+        setBingoImage(image: renderer?.cgImage)
     }
 
-    private func setBingoImage(image: CIImage?) {
+    private func setBingoImage(image: CGImage?) {
+        let bingoImage = image?.toEffectImage()
         processorPipelineQueue.async {
-            self.bingoImage = image
+            self.bingoImage = bingoImage
         }
     }
 }

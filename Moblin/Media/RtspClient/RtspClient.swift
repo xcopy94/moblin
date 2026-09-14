@@ -92,7 +92,7 @@ private class SdpLinesParser {
     }
 
     func getMediaDescriptions() -> [SdpMediaDescription] {
-        return mediaDescriptions
+        mediaDescriptions
     }
 
     private func parse(value: String) throws {
@@ -304,7 +304,7 @@ private enum State {
 }
 
 private func md5String(data: String) -> String {
-    return calculateMd5(data).hexString()
+    calculateMd5(data).hexString()
 }
 
 extension URL {
@@ -335,7 +335,9 @@ private class RtpVideoProcessor: RtpProcessor {
     init(formatDescription: CMFormatDescription, client: RtspClient) {
         self.formatDescription = formatDescription
         self.client = client
-        decoder = VideoDecoder(lockQueue: rtspClientQueue)
+        decoder = VideoDecoder(name: "rtsp-client",
+                               lockQueue: rtspClientQueue,
+                               softwareDecoding: client.softwareDecoding)
         super.init()
         decoder.delegate = self
         decoder.startRunning(formatDescription: formatDescription)
@@ -416,6 +418,8 @@ private class RtpProcessorVideoH264: RtpVideoProcessor {
         switch type {
         case 1 ... 23:
             try processBufferTypeSingle(packet: packet, timestamp: timestamp)
+        case 24:
+            try processBufferTypeStapA(packet: packet, timestamp: timestamp)
         case rtpH264PacketTypeFuA:
             try processBufferTypeFuA(packet: packet, timestamp: timestamp)
         default:
@@ -426,6 +430,23 @@ private class RtpProcessorVideoH264: RtpVideoProcessor {
     private func processBufferTypeSingle(packet: Data, timestamp: Int64) throws {
         decodeFrame()
         startNewFrame(timestamp: timestamp, first: packet[12...])
+    }
+
+    private func processBufferTypeStapA(packet: Data, timestamp: Int64) throws {
+        var offset = 13
+        while offset < packet.count {
+            guard offset + 2 <= packet.count else {
+                throw "STAP-A packet short NAL header"
+            }
+            let nalUnitSize = Int(UInt16(packet[offset]) << 8 | UInt16(packet[offset + 1]))
+            offset += 2
+            guard offset + nalUnitSize <= packet.count else {
+                throw "STAP-A packet short NAL data"
+            }
+            decodeFrame()
+            startNewFrame(timestamp: timestamp, first: packet[offset ..< offset + nalUnitSize])
+            offset += nalUnitSize
+        }
     }
 
     private func processBufferTypeFuA(packet: Data, timestamp: Int64) throws {
@@ -446,12 +467,7 @@ private class RtpProcessorVideoH264: RtpVideoProcessor {
         guard data.count > 4 else {
             return
         }
-        switch AvcNalUnit(data: data, offset: 4)?.header.type {
-        case .idr:
-            break
-        case .slice:
-            break
-        default:
+        guard AvcNalUnitType.isPicture(type: data[4] & 0x1F) else {
             return
         }
         tryDecodeFrame()
@@ -467,6 +483,8 @@ private class RtpProcessorVideoH265: RtpVideoProcessor {
         switch type {
         case 1 ... 47:
             try processBufferTypeSingle(packet: packet, timestamp: timestamp)
+        case 48:
+            try processBufferTypeAp(packet: packet, timestamp: timestamp)
         case 49:
             try processBufferTypeFu(packet: packet, timestamp: timestamp)
         default:
@@ -477,6 +495,23 @@ private class RtpProcessorVideoH265: RtpVideoProcessor {
     private func processBufferTypeSingle(packet: Data, timestamp: Int64) throws {
         decodeFrame()
         startNewFrame(timestamp: timestamp, first: packet[12...])
+    }
+
+    private func processBufferTypeAp(packet: Data, timestamp: Int64) throws {
+        var offset = 14
+        while offset < packet.count {
+            guard offset + 2 <= packet.count else {
+                throw "AP packet short NAL header"
+            }
+            let nalUnitSize = Int(UInt16(packet[offset]) << 8 | UInt16(packet[offset + 1]))
+            offset += 2
+            guard offset + nalUnitSize <= packet.count else {
+                throw "AP packet short NAL data"
+            }
+            decodeFrame()
+            startNewFrame(timestamp: timestamp, first: packet[offset ..< offset + nalUnitSize])
+            offset += nalUnitSize
+        }
     }
 
     private func processBufferTypeFu(packet: Data, timestamp: Int64) throws {
@@ -496,6 +531,12 @@ private class RtpProcessorVideoH265: RtpVideoProcessor {
     }
 
     private func decodeFrame() {
+        guard data.count > 4 else {
+            return
+        }
+        guard HevcNalUnitType.isPicture(type: (data[4] >> 1) & 0x3F) else {
+            return
+        }
         tryDecodeFrame()
     }
 }
@@ -505,10 +546,9 @@ private class Rtp {
     private var reorderBuffer: [UInt16: Data] = [:]
     private let reorderBufferMaxSize = 64
     var processor: RtpProcessor?
-    weak var client: RtspClient?
     private let wrappingTimestamp = WrappingTimestamp(
         name: "RTP",
-        maximumTimestamp: CMTime(seconds: 0x1_0000_0000)
+        maximumTimestamp: CMTime(value: 0x1_0000_0000, timescale: 1)
     )
 
     func handlePacket(packet: Data) throws {
@@ -563,16 +603,17 @@ private class Rtp {
     }
 
     private func updateTimestamp(timestamp: UInt32) -> Int64 {
-        return wrappingTimestamp.update(CMTime(value: Int64(timestamp), timescale: 1)).value
+        wrappingTimestamp.update(CMTime(value: Int64(timestamp), timescale: 1)).value
     }
 }
 
-class RtspClient {
+class RtspClient: @unchecked Sendable {
     private var state: State
     private var transport: RtspTransport?
     private let cameraId: UUID
     private let url: URL
     fileprivate let latency: Double
+    fileprivate let softwareDecoding: Bool
     private let username: String?
     private let password: String?
     private let port: Int
@@ -582,7 +623,7 @@ class RtspClient {
     private var requests: [Int: Request] = [:]
     private var videoSession: String?
     private var rtpVideo = Rtp()
-    private let delegate: RtspClientDelegate
+    private let delegate: any RtspClientDelegate
     private var connectTimer = SimpleTimer(queue: rtspClientQueue)
     private var keepAliveTimer = SimpleTimer(queue: rtspClientQueue)
     private var reconnectTimer = SimpleTimer(queue: rtspClientQueue)
@@ -595,10 +636,12 @@ class RtspClient {
          url: URL,
          latency: Double,
          transport: SettingsRtspTransport,
-         delegate: RtspClientDelegate)
+         softwareDecoding: Bool,
+         delegate: any RtspClientDelegate)
     {
         self.cameraId = cameraId
         self.latency = latency
+        self.softwareDecoding = softwareDecoding
         self.delegate = delegate
         transportType = transport
         username = url.user()
@@ -625,7 +668,7 @@ class RtspClient {
     }
 
     func updateStats() -> BitrateStatsInstant {
-        return rtspClientQueue.sync {
+        rtspClientQueue.sync {
             bitrateStats.update()
         }
     }
@@ -663,7 +706,6 @@ class RtspClient {
         transport?.delegate = self
         transport?.start(host: host, port: port)
         rtpVideo = Rtp()
-        rtpVideo.client = self
         setState(newState: .connecting)
         connectTimer.startSingleShot(timeout: 5) { [weak self] in
             self?.reconnectSoon()
@@ -960,9 +1002,9 @@ class RtspClient {
     private func createTransport() -> RtspTransport {
         switch transportType {
         case .rtpRtspTcp:
-            return RtspTransportRtpRtspTcp()
+            RtspTransportRtpRtspTcp()
         case .rtpUdp:
-            return RtspTransportRtpUdp()
+            RtspTransportRtpUdp()
         }
     }
 }
@@ -995,9 +1037,5 @@ extension RtspClient: RtspTransportDelegate {
     func rtspTransportReceivedRtcpPacket(_ packet: Data) {
         bitrateStats.add(bytesTransferred: packet.count)
         handleRtcpVideoPacket(packet: packet)
-    }
-
-    func rtspTransportBytesReceived(count: Int) {
-        bitrateStats.add(bytesTransferred: count)
     }
 }

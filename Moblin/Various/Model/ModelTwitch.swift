@@ -4,31 +4,31 @@ import SwiftUI
 
 extension Model {
     func updateViewersTwitch() -> StreamingPlatformStatus {
-        return StreamingPlatformStatus(platform: .twitch, status: twitchPlatformStatus)
+        StreamingPlatformStatus(platform: .twitch, status: twitchPlatformStatus)
     }
 
     func isTwitchEventSubConfigured() -> Bool {
-        return stream.twitchLoggedIn
+        stream.twitchLoggedIn
     }
 
     func isTwitchEventsConnected() -> Bool {
-        return twitchEventSub?.isConnected() ?? false
+        twitchEventSub?.isConnected() ?? false
     }
 
     func isTwitchViewersConfigured() -> Bool {
-        return stream.twitchChannelId != "" && stream.twitchLoggedIn
+        stream.twitchChannelId != "" && stream.twitchLoggedIn
     }
 
     func isTwitchChatConfigured() -> Bool {
-        return database.chat.enabled && stream.twitchChannelName != ""
+        database.chat.enabled && stream.twitchChannelName != ""
     }
 
     func isTwitchChatConnected() -> Bool {
-        return twitchChat?.isConnected() ?? false
+        twitchChat?.isConnected() ?? false
     }
 
     func hasTwitchChatEmotes() -> Bool {
-        return twitchChat?.hasEmotes() ?? false
+        twitchChat?.hasEmotes() ?? false
     }
 
     func reloadTwitchChat() {
@@ -134,6 +134,31 @@ extension Model {
         }
     }
 
+    func getTwitchFollowedStreams(
+        stream: SettingsStream,
+        onComplete: @escaping (NetworkResponse<[TwitchApiStreamData]>) -> Void
+    ) {
+        createTwitchApi(stream: stream).getFollowedStreams(userId: stream.twitchChannelId,
+                                                           onComplete: onComplete)
+    }
+
+    func getTwitchStreams(
+        stream: SettingsStream,
+        userIds: [String],
+        live: Bool,
+        onComplete: @escaping ([TwitchApiStreamData]?) -> Void
+    ) {
+        createTwitchApi(stream: stream).getStreams(userIds: userIds, live: live, onComplete: onComplete)
+    }
+
+    func getTwitchUsers(
+        stream: SettingsStream,
+        userIds: [String],
+        onComplete: @escaping ([TwitchApiUser]?) -> Void
+    ) {
+        createTwitchApi(stream: stream).getUsersByIds(ids: userIds, onComplete: onComplete)
+    }
+
     func getTwitchChannelInformation(
         stream: SettingsStream,
         onComplete: @escaping (TwitchApiChannelInformationData) -> Void
@@ -143,6 +168,12 @@ extension Model {
                 return
             }
             onComplete(info)
+        }
+    }
+
+    func getTwitchTokenExpiresIn(stream: SettingsStream, onComplete: @escaping (Duration?) -> Void) {
+        createTwitchApi(stream: stream).validateToken { data in
+            onComplete(data.map { .seconds($0.expires_in) })
         }
     }
 
@@ -162,6 +193,8 @@ extension Model {
         twitchAuthOnComplete = { accessToken in
             storeTwitchAccessTokenInKeychain(streamId: stream.id, accessToken: accessToken)
             stream.twitchLoggedIn = true
+            stream.twitchWantsToBeLoggedIn = true
+            stream.twitchNotLoggedInCount = 0
             stream.twitchAccessToken = accessToken
             self.showTwitchAuth = false
             self.showModerationAuth = false
@@ -182,6 +215,7 @@ extension Model {
 
     func twitchLogout(stream: SettingsStream) {
         stream.twitchLoggedIn = false
+        stream.twitchWantsToBeLoggedIn = false
         stream.twitchAccessToken = ""
         removeTwitchAccessTokenInKeychain(streamId: stream.id)
         if stream.enabled {
@@ -193,6 +227,17 @@ extension Model {
 
     func handleTwitchAccessToken(accessToken: String) {
         twitchAuthOnComplete?(accessToken)
+    }
+
+    func makeNotLoggedInToTwitchToastIfNeeded() {
+        guard stream.twitchWantsToBeLoggedIn, !stream.twitchLoggedIn else {
+            return
+        }
+        stream.twitchNotLoggedInCount += 1
+        if stream.twitchNotLoggedInCount >= maxNotLoggedInToastCount {
+            stream.twitchWantsToBeLoggedIn = false
+        }
+        makeNotLoggedInToToast(platform: .twitch)
     }
 
     func createStreamMarker() {
@@ -412,6 +457,62 @@ extension Model {
             }
     }
 
+    func getTwitchPolls(onComplete: @escaping (NetworkResponse<[TwitchApiPollData]>) -> Void) {
+        createTwitchApi(stream: stream).getPolls(broadcasterId: stream.twitchChannelId,
+                                                 onComplete: onComplete)
+    }
+
+    func createTwitchPoll(title: String,
+                          choices: [String],
+                          duration: Int,
+                          onComplete: @escaping (OperationResult) -> Void)
+    {
+        createTwitchApi(stream: stream).createPoll(broadcasterId: stream.twitchChannelId,
+                                                   title: title,
+                                                   choices: choices,
+                                                   duration: duration,
+                                                   onComplete: onComplete)
+    }
+
+    func endTwitchPoll(id: String,
+                       status: TwitchApiPollStatus,
+                       onComplete: @escaping (OperationResult) -> Void)
+    {
+        createTwitchApi(stream: stream).endPoll(broadcasterId: stream.twitchChannelId,
+                                                id: id,
+                                                status: status,
+                                                onComplete: onComplete)
+    }
+
+    func getTwitchPredictions(onComplete: @escaping (NetworkResponse<[TwitchApiPredictionData]>) -> Void) {
+        createTwitchApi(stream: stream).getPredictions(broadcasterId: stream.twitchChannelId,
+                                                       onComplete: onComplete)
+    }
+
+    func createTwitchPrediction(title: String,
+                                outcomes: [String],
+                                predictionWindow: Int,
+                                onComplete: @escaping (OperationResult) -> Void)
+    {
+        createTwitchApi(stream: stream).createPrediction(broadcasterId: stream.twitchChannelId,
+                                                         title: title,
+                                                         outcomes: outcomes,
+                                                         predictionWindow: predictionWindow,
+                                                         onComplete: onComplete)
+    }
+
+    func endTwitchPrediction(id: String,
+                             status: TwitchApiPredictionStatus,
+                             winningOutcomeId: String? = nil,
+                             onComplete: @escaping (OperationResult) -> Void)
+    {
+        createTwitchApi(stream: stream).endPrediction(broadcasterId: stream.twitchChannelId,
+                                                      id: id,
+                                                      status: status,
+                                                      winningOutcomeId: winningOutcomeId,
+                                                      onComplete: onComplete)
+    }
+
     func startRaidTwitchChannel(
         channelId: String,
         onComplete: @escaping (OperationResult) -> Void
@@ -428,11 +529,15 @@ extension Model {
 
     func twitchRaidStarted(channelLogin: String, channelName: String) {
         raid.state = .ongoing
+        raid.channelLogin = channelLogin
         raid.message = String(localized: "Raiding \(channelName)")
         raid.progress.progress = 0
         raid.progress.goal = 90
         searchTwitchChannel(stream: stream, channelName: channelLogin) {
             self.raid.channelImage = $0?.thumbnail_url ?? ""
+            if let channelId = $0?.id {
+                self.appendTwitchRaidSent(channelId: channelId, channelName: channelName)
+            }
         }
     }
 
@@ -461,7 +566,20 @@ extension Model {
     func removeRaid() {
         raid.state = .idle
         raid.channelImage = ""
+        raid.channelLogin = ""
         raid.timer.stop()
+    }
+
+    private func appendTwitchRaidSent(channelId: String, channelName: String) {
+        stream.twitchRaidsSent = appendTwitchRaidChannel(stream.twitchRaidsSent,
+                                                         channelId: channelId,
+                                                         channelName: channelName)
+    }
+
+    private func appendTwitchRaidReceived(channelId: String, channelName: String) {
+        stream.twitchRaidsReceived = appendTwitchRaidChannel(stream.twitchRaidsReceived,
+                                                             channelId: channelId,
+                                                             channelName: channelName)
     }
 
     func createTwitchApi(stream: SettingsStream) -> TwitchApi {
@@ -485,7 +603,78 @@ extension Model {
         }
     }
 
+    private func parseTwitchTimestamp(_ value: String?) -> Date? {
+        guard var value else {
+            return nil
+        }
+        if let index = value.firstIndex(of: ".") {
+            value = String(value[..<index]) + "Z"
+        }
+        return try? Date.ISO8601FormatStyle().parse(value)
+    }
+
+    private func formatTwitchCountdown(_ date: Date) -> String {
+        uptimeFormatter.string(from: max(0, date.timeIntervalSinceNow).rounded(.up)) ?? ""
+    }
+
+    private func updateTwitchPoll(event: TwitchEventSubChannelPollEvent, state: TwitchPollState) {
+        twitchPoll.state = state
+        twitchPoll.title = event.title
+        twitchPoll.choices = event.choices.map {
+            TwitchPollChoice(id: $0.id, title: $0.title, votes: $0.votes ?? 0)
+        }
+        twitchPoll.totalVotes = twitchPoll.choices.reduce(0) { $0 + $1.votes }
+        twitchPoll.endsAt = parseTwitchTimestamp(event.ends_at)
+    }
+
+    func updateTwitchPollCountdown() {
+        guard twitchPoll.state == .ongoing, let endsAt = twitchPoll.endsAt else {
+            return
+        }
+        let countdown = formatTwitchCountdown(endsAt)
+        twitchPoll.message = String(localized: "Ends in \(countdown)")
+    }
+
+    func removeTwitchPoll() {
+        twitchPoll.state = .idle
+        twitchPoll.timer.stop()
+    }
+
+    private func updateTwitchPrediction(
+        event: TwitchEventSubChannelPredictionEvent,
+        state: TwitchPredictionState
+    ) {
+        twitchPrediction.state = state
+        twitchPrediction.title = event.title
+        twitchPrediction.outcomes = event.outcomes.map {
+            TwitchPredictionOutcome(id: $0.id,
+                                    title: $0.title,
+                                    color: $0.color,
+                                    users: $0.users ?? 0,
+                                    channelPoints: $0.channel_points ?? 0,
+                                    winner: $0.id == event.winning_outcome_id)
+        }
+        twitchPrediction.totalChannelPoints = twitchPrediction.outcomes.reduce(0) { $0 + $1.channelPoints }
+        twitchPrediction.locksAt = parseTwitchTimestamp(event.locks_at)
+    }
+
+    func updateTwitchPredictionCountdown() {
+        guard twitchPrediction.state == .ongoing, let locksAt = twitchPrediction.locksAt else {
+            return
+        }
+        let countdown = formatTwitchCountdown(locksAt)
+        twitchPrediction.message = String(localized: "Locks in \(countdown)")
+    }
+
+    func removeTwitchPrediction() {
+        twitchPrediction.state = .idle
+        twitchPrediction.timer.stop()
+    }
+
     private func updateHypeTrainStatus(level: Int, progress: Int, goal: Int) {
+        guard goal > 0 else {
+            return
+        }
         let percentage = Int(100 * Float(progress) / Float(goal))
         hypeTrain.status = "LVL \(level), \(percentage)%"
     }
@@ -512,13 +701,44 @@ extension Model {
         text: String,
         title: String,
         color: Color,
-        image: String? = nil,
-        kind: ChatHighlightKind? = nil,
+        image: String,
+        kind: ChatHighlightKind,
+        sharedChat: TwitchEventSubSharedChat?,
         bits: String? = nil
     ) {
         guard let twitchChat else {
             return
         }
+        let segments = twitchChat.createSegmentsNoTwitchEmotes(text: text, bits: bits)
+        let highlight = ChatHighlight(
+            kind: kind,
+            barColor: color,
+            image: image,
+            titleSegments: [ChatPostSegment(id: 0, text: title)]
+        )
+        if let sharedChat {
+            twitchChat.getSourceChannelIcon(sourceRoomId: sharedChat.broadcasterUserId) { sourceChannelIcon in
+                self.appendTwitchChatAlertMessage(user: user,
+                                                  segments: segments,
+                                                  highlight: highlight,
+                                                  sourceChannelIcon: sourceChannelIcon)
+            }
+        } else {
+            appendTwitchChatAlertMessage(
+                user: user,
+                segments: segments,
+                highlight: highlight,
+                sourceChannelIcon: nil
+            )
+        }
+    }
+
+    private func appendTwitchChatAlertMessage(
+        user: String,
+        segments: [ChatPostSegment],
+        highlight: ChatHighlight,
+        sourceChannelIcon: URL?
+    ) {
         appendChatMessage(platform: .twitch,
                           messageId: nil,
                           displayName: user,
@@ -526,7 +746,7 @@ extension Model {
                           userId: nil,
                           userColor: nil,
                           userBadges: [],
-                          segments: twitchChat.createSegmentsNoTwitchEmotes(text: text, bits: bits),
+                          segments: segments,
                           timestamp: statusOther.digitalClock,
                           timestampTime: .now,
                           isAction: false,
@@ -534,18 +754,22 @@ extension Model {
                           isModerator: false,
                           isOwner: false,
                           bits: nil,
-                          highlight: .init(
-                              kind: kind ?? .redemption,
-                              barColor: color,
-                              image: image ?? "medal",
-                              titleSegments: [ChatPostSegment(id: 0, text: title)]
-                          ),
-                          live: true)
+                          highlight: highlight,
+                          live: true,
+                          sourceChannelIcon: sourceChannelIcon)
+    }
+
+    private func isTwitchSharedChatAlertEnabled(
+        _ sharedChat: TwitchEventSubSharedChat?,
+        alerts: SettingsTwitchAlerts
+    ) -> Bool {
+        sharedChat == nil || alerts.sharedChat
     }
 }
 
-extension Model: TwitchEventSubDelegate {
+extension Model: @preconcurrency TwitchEventSubDelegate {
     func twitchEventSubChannelFollow(event: TwitchEventSubNotificationChannelFollowEvent) {
+        latestFollower = event.user_name
         let text = String(localized: "just followed!")
         if stream.twitchToastAlerts.follows {
             makeToast(title: "\(event.user_name) \(text)")
@@ -557,7 +781,9 @@ extension Model: TwitchEventSubDelegate {
                 text: text,
                 title: String(localized: "New follower"),
                 color: .pink,
-                kind: .newFollower
+                image: "medal",
+                kind: .newFollower,
+                sharedChat: nil
             )
         }
         printEventCatPrinters(event: .twitchFollow, username: event.user_name, message: text)
@@ -567,9 +793,18 @@ extension Model: TwitchEventSubDelegate {
         guard !event.is_gift else {
             return
         }
-        let text = String(localized: "just subscribed tier \(event.tierAsNumber())!")
-        if stream.twitchToastAlerts.subscriptions {
+        let text = if event.isPrime() {
+            String(localized: "just subscribed with Prime!")
+        } else {
+            String(localized: "just subscribed tier \(event.tierAsNumber())!")
+        }
+        if stream.twitchToastAlerts.subscriptions,
+           isTwitchSharedChatAlertEnabled(event.sharedChat, alerts: stream.twitchToastAlerts)
+        {
             makeToast(title: "\(event.user_name) \(text)")
+        }
+        guard isTwitchSharedChatAlertEnabled(event.sharedChat, alerts: stream.twitchChatAlerts) else {
+            return
         }
         playAlert(alert: .twitchSubscribe(event))
         if stream.twitchChatAlerts.subscriptions {
@@ -578,18 +813,26 @@ extension Model: TwitchEventSubDelegate {
                 text: text,
                 title: String(localized: "New subscriber"),
                 color: .cyan,
-                image: "party.popper"
+                image: "party.popper",
+                kind: .other,
+                sharedChat: event.sharedChat
             )
         }
         printEventCatPrinters(event: .twitchSubscribe, username: event.user_name, message: text)
+        latestSubscriber = event.user_name
     }
 
     func twitchEventSubChannelSubscriptionGift(event: TwitchEventSubNotificationChannelSubscriptionGiftEvent) {
         let user = event.user_name ?? String(localized: "Anonymous")
         let text =
             String(localized: "just gifted \(event.total) tier \(event.tierAsNumber()) subscriptions!")
-        if stream.twitchToastAlerts.giftSubscriptions {
+        if stream.twitchToastAlerts.giftSubscriptions,
+           isTwitchSharedChatAlertEnabled(event.sharedChat, alerts: stream.twitchToastAlerts)
+        {
             makeToast(title: "\(user) \(text)")
+        }
+        guard isTwitchSharedChatAlertEnabled(event.sharedChat, alerts: stream.twitchChatAlerts) else {
+            return
         }
         playAlert(alert: .twitchSubscrptionGift(event))
         if stream.twitchChatAlerts.giftSubscriptions {
@@ -598,21 +841,36 @@ extension Model: TwitchEventSubDelegate {
                 text: text,
                 title: String(localized: "Gift subscriptions"),
                 color: .cyan,
-                image: "gift"
+                image: "gift",
+                kind: .other,
+                sharedChat: event.sharedChat
             )
         }
         printEventCatPrinters(event: .twitchSubscrptionGift, username: user, message: text)
+        latestSubscriber = user
     }
 
     func twitchEventSubChannelSubscriptionMessage(
         event: TwitchEventSubNotificationChannelSubscriptionMessageEvent
     ) {
-        let text = String(localized: """
-        just resubscribed tier \(event.tierAsNumber()) for \(event.cumulative_months) \
-        months! \(event.message.text)
-        """)
-        if stream.twitchToastAlerts.resubscriptions {
+        let text = if let streakMonths = event.streak_months {
+            String(localized: """
+            just resubscribed tier \(event.tierAsNumber()) for \(event.cumulative_months) months, \
+            \(streakMonths) in a row! \(event.message.text)
+            """)
+        } else {
+            String(localized: """
+            just resubscribed tier \(event.tierAsNumber()) for \(event.cumulative_months) \
+            months! \(event.message.text)
+            """)
+        }
+        if stream.twitchToastAlerts.resubscriptions,
+           isTwitchSharedChatAlertEnabled(event.sharedChat, alerts: stream.twitchToastAlerts)
+        {
             makeToast(title: "\(event.user_name) \(text)")
+        }
+        guard isTwitchSharedChatAlertEnabled(event.sharedChat, alerts: stream.twitchChatAlerts) else {
+            return
         }
         playAlert(alert: .twitchResubscribe(event))
         if stream.twitchChatAlerts.resubscriptions {
@@ -621,10 +879,72 @@ extension Model: TwitchEventSubDelegate {
                 text: text,
                 title: String(localized: "New resubscribe"),
                 color: .cyan,
-                image: "party.popper"
+                image: "party.popper",
+                kind: .other,
+                sharedChat: event.sharedChat
             )
         }
         printEventCatPrinters(event: .twitchResubscribe, username: event.user_name, message: text)
+        latestSubscriber = event.user_name
+    }
+
+    func twitchEventSubChannelSubscriptionUpgrade(
+        event: TwitchEventSubNotificationChannelSubscriptionUpgradeEvent
+    ) {
+        let text = if let tier = event.tierAsNumber() {
+            String(localized: "just converted their Prime subscription to tier \(tier)!")
+        } else {
+            String(localized: "just continued their gift subscription!")
+        }
+        if stream.twitchToastAlerts.subscriptions,
+           isTwitchSharedChatAlertEnabled(event.sharedChat, alerts: stream.twitchToastAlerts)
+        {
+            makeToast(title: "\(event.user_name) \(text)")
+        }
+        guard isTwitchSharedChatAlertEnabled(event.sharedChat, alerts: stream.twitchChatAlerts) else {
+            return
+        }
+        playAlert(alert: .twitchSubscriptionUpgrade(event))
+        if stream.twitchChatAlerts.subscriptions {
+            appendTwitchChatAlertMessage(
+                user: event.user_name,
+                text: text,
+                title: String(localized: "New subscriber"),
+                color: .cyan,
+                image: "party.popper",
+                kind: .other,
+                sharedChat: event.sharedChat
+            )
+        }
+        printEventCatPrinters(event: .twitchSubscribe, username: event.user_name, message: text)
+        latestSubscriber = event.user_name
+    }
+
+    func twitchEventSubChannelWatchStreak(event: TwitchEventSubNotificationChannelWatchStreakEvent) {
+        let text = if event.message.text.isEmpty {
+            String(localized: "just watched \(event.streak_count) streams in a row!")
+        } else {
+            String(localized: "just watched \(event.streak_count) streams in a row! \(event.message.text)")
+        }
+        if stream.twitchToastAlerts.isWatchStreakEnabled(count: event.streak_count),
+           isTwitchSharedChatAlertEnabled(event.sharedChat, alerts: stream.twitchToastAlerts)
+        {
+            makeToast(title: "\(event.user_name) \(text)")
+        }
+        guard isTwitchSharedChatAlertEnabled(event.sharedChat, alerts: stream.twitchChatAlerts) else {
+            return
+        }
+        if stream.twitchChatAlerts.isWatchStreakEnabled(count: event.streak_count) {
+            appendTwitchChatAlertMessage(
+                user: event.user_name,
+                text: text,
+                title: String(localized: "Watch streak"),
+                color: .orange,
+                image: "flame",
+                kind: .other,
+                sharedChat: event.sharedChat
+            )
+        }
     }
 
     func twitchEventSubChannelPointsCustomRewardRedemptionAdd(
@@ -643,19 +963,28 @@ extension Model: TwitchEventSubDelegate {
                 text: text,
                 title: String(localized: "Reward redemption"),
                 color: .blue,
-                image: "medal.star"
+                image: "medal.star",
+                kind: .redemption,
+                sharedChat: nil
             )
         }
         printEventCatPrinters(event: .twitchReward, username: event.user_name, message: text)
     }
 
     func twitchEventSubChannelRaid(event: TwitchEventSubChannelRaidEvent) {
-        if event.from_broadcaster_user_id == stream.twitchChannelId {
+        if event.sharedChat == nil, event.from_broadcaster_user_id == stream.twitchChannelId {
             twitchRaidCompleted()
         } else {
+            appendTwitchRaidReceived(channelId: event.from_broadcaster_user_id,
+                                     channelName: event.from_broadcaster_user_name)
             let text = String(localized: "raided with a party of \(event.viewers)!")
-            if stream.twitchToastAlerts.raids {
+            if stream.twitchToastAlerts.raids,
+               isTwitchSharedChatAlertEnabled(event.sharedChat, alerts: stream.twitchToastAlerts)
+            {
                 makeToast(title: "\(event.from_broadcaster_user_name) \(text)")
+            }
+            guard isTwitchSharedChatAlertEnabled(event.sharedChat, alerts: stream.twitchChatAlerts) else {
+                return
             }
             playAlert(alert: .twitchRaid(event))
             if stream.twitchChatAlerts.raids {
@@ -664,7 +993,9 @@ extension Model: TwitchEventSubDelegate {
                     text: text,
                     title: String(localized: "Raid"),
                     color: .pink,
-                    image: "person.3"
+                    image: "person.3",
+                    kind: .other,
+                    sharedChat: event.sharedChat
                 )
             }
             printEventCatPrinters(
@@ -690,6 +1021,8 @@ extension Model: TwitchEventSubDelegate {
                 title: String(localized: "Cheer"),
                 color: .green,
                 image: "suit.diamond",
+                kind: .other,
+                sharedChat: nil,
                 bits: ""
             )
         }
@@ -704,6 +1037,15 @@ extension Model: TwitchEventSubDelegate {
         hypeTrain.progress?.goal = Float(event.goal)
         updateHypeTrainStatus(level: event.level, progress: event.progress, goal: event.goal)
         startHypeTrainTimer(timeout: 600)
+        appendTwitchChatAlertMessage(
+            user: stream.twitchChannelName,
+            text: String(localized: "started a hype train!"),
+            title: String(localized: "Hype train started"),
+            color: .purple,
+            image: "train.side.front.car",
+            kind: .other,
+            sharedChat: nil
+        )
     }
 
     func twitchEventSubChannelHypeTrainProgress(event: TwitchEventSubChannelHypeTrainProgressEvent) {
@@ -726,13 +1068,129 @@ extension Model: TwitchEventSubDelegate {
         hypeTrain.progress?.goal = 1
         updateHypeTrainStatus(level: event.level, progress: 1, goal: 1)
         startHypeTrainTimer(timeout: 60)
+        appendTwitchChatAlertMessage(
+            user: stream.twitchChannelName,
+            text: String(localized: "ended the hype train at level \(event.level)!"),
+            title: String(localized: "Hype train ended"),
+            color: .purple,
+            image: "train.side.rear.car",
+            kind: .other,
+            sharedChat: nil
+        )
     }
 
     func twitchEventSubChannelAdBreakBegin(event: TwitchEventSubChannelAdBreakBeginEvent) {
         adsEndDate = Date().advanced(by: Double(event.duration_seconds))
-        let duration = formatFullDuration(seconds: event.duration_seconds)
+        let duration = formatShortDuration(seconds: event.duration_seconds)
         let kind = event.is_automatic ? String(localized: "automatic") : String(localized: "manual")
         makeToast(title: String(localized: "\(duration) \(kind) commercial starting"))
+    }
+
+    private func updateOngoingTwitchPoll(event: TwitchEventSubChannelPollEvent) {
+        updateTwitchPoll(event: event, state: .ongoing)
+        updateTwitchPollCountdown()
+        twitchPoll.timer.startSingleShot(timeout: 1900) { [weak self] in
+            self?.removeTwitchPoll()
+        }
+    }
+
+    func twitchEventSubChannelPollBegin(event: TwitchEventSubChannelPollEvent) {
+        updateOngoingTwitchPoll(event: event)
+        appendTwitchChatAlertMessage(
+            user: stream.twitchChannelName,
+            text: String(localized: "started a poll: \(event.title)"),
+            title: String(localized: "Poll started"),
+            color: .indigo,
+            image: "chart.bar",
+            kind: .other,
+            sharedChat: nil
+        )
+    }
+
+    func twitchEventSubChannelPollProgress(event: TwitchEventSubChannelPollEvent) {
+        updateOngoingTwitchPoll(event: event)
+    }
+
+    func twitchEventSubChannelPollEnd(event: TwitchEventSubChannelPollEvent) {
+        updateTwitchPoll(event: event, state: .completed)
+        let text: String
+        if event.status != "archived" {
+            twitchPoll.message = String(localized: "Poll ended")
+            if let winner = twitchPoll.choices.max(by: { $0.votes < $1.votes }) {
+                text = String(localized: "ended the poll: \(event.title) Winner: \(winner.title)")
+            } else {
+                text = String(localized: "ended the poll: \(event.title)")
+            }
+        } else {
+            return
+        }
+        twitchPoll.timer.startSingleShot(timeout: 60) { [weak self] in
+            self?.removeTwitchPoll()
+        }
+        appendTwitchChatAlertMessage(
+            user: stream.twitchChannelName,
+            text: text,
+            title: String(localized: "Poll ended"),
+            color: .indigo,
+            image: "chart.bar",
+            kind: .other,
+            sharedChat: nil
+        )
+    }
+
+    private func updateOngoingTwitchPrediction(event: TwitchEventSubChannelPredictionEvent) {
+        updateTwitchPrediction(event: event, state: .ongoing)
+        updateTwitchPredictionCountdown()
+        twitchPrediction.timer.startSingleShot(timeout: 1900) { [weak self] in
+            self?.removeTwitchPrediction()
+        }
+    }
+
+    func twitchEventSubChannelPredictionBegin(event: TwitchEventSubChannelPredictionEvent) {
+        updateOngoingTwitchPrediction(event: event)
+        appendTwitchChatAlertMessage(
+            user: stream.twitchChannelName,
+            text: String(localized: "started a prediction: \(event.title)"),
+            title: String(localized: "Prediction started"),
+            color: .mint,
+            image: "questionmark.diamond",
+            kind: .other,
+            sharedChat: nil
+        )
+    }
+
+    func twitchEventSubChannelPredictionProgress(event: TwitchEventSubChannelPredictionEvent) {
+        updateOngoingTwitchPrediction(event: event)
+    }
+
+    func twitchEventSubChannelPredictionLock(event: TwitchEventSubChannelPredictionEvent) {
+        updateTwitchPrediction(event: event, state: .locked)
+        twitchPrediction.message = String(localized: "Locked, waiting for outcome")
+        twitchPrediction.timer.stop()
+    }
+
+    func twitchEventSubChannelPredictionEnd(event: TwitchEventSubChannelPredictionEvent) {
+        updateTwitchPrediction(event: event, state: .completed)
+        let text: String
+        if let winner = twitchPrediction.outcomes.first(where: { $0.winner }) {
+            twitchPrediction.message = String(localized: "Outcome: \(winner.title)")
+            text = String(localized: "ended the prediction: \(event.title) Outcome: \(winner.title)")
+        } else {
+            twitchPrediction.message = String(localized: "Prediction cancelled")
+            text = String(localized: "cancelled the prediction: \(event.title)")
+        }
+        twitchPrediction.timer.startSingleShot(timeout: 60) { [weak self] in
+            self?.removeTwitchPrediction()
+        }
+        appendTwitchChatAlertMessage(
+            user: stream.twitchChannelName,
+            text: text,
+            title: String(localized: "Prediction ended"),
+            color: .mint,
+            image: "trophy",
+            kind: .other,
+            sharedChat: nil
+        )
     }
 
     func twitchEventSubChannelModerate(event: TwitchEventSubChannelModerateEvent) {
@@ -756,7 +1214,7 @@ extension Model: TwitchEventSubDelegate {
     func twitchEventSubNotification(message _: String) {}
 }
 
-extension Model: TwitchChatDelegate {
+extension Model: @preconcurrency TwitchChatDelegate {
     func twitchChatMakeErrorToast(title: String, subTitle: String?) {
         makeErrorToast(title: title, subTitle: subTitle)
     }
@@ -805,8 +1263,12 @@ extension Model: TwitchChatDelegate {
     }
 }
 
-extension Model: TwitchApiDelegate {
+extension Model: @preconcurrency TwitchApiDelegate {
     func twitchApiUnauthorized() {
+        guard stream.twitchLoggedIn else {
+            return
+        }
         stream.twitchLoggedIn = false
+        makeNotLoggedInToToast(platform: .twitch)
     }
 }

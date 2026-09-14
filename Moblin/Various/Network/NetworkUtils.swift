@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import WebKit
 
 extension NWPath {
     // The list contains duplicates since iOS 26. Apple bug?
@@ -18,24 +19,6 @@ extension NWEndpoint.Port {
     }
 }
 
-final class NWConnectionWithId: Hashable, Equatable {
-    let id: String
-    let connection: NWConnection
-
-    init(connection: NWConnection) {
-        self.connection = connection
-        id = UUID().uuidString
-    }
-
-    static func == (lhs: NWConnectionWithId, rhs: NWConnectionWithId) -> Bool {
-        return lhs.id == rhs.id
-    }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-}
-
 extension NWConnection.ContentContext {
     func webSocketOperation() -> NWProtocolWebSocket.Opcode? {
         let definitions = protocolMetadata(definition: NWProtocolWebSocket.definition) as? Network
@@ -46,10 +29,13 @@ extension NWConnection.ContentContext {
 }
 
 extension NWConnection {
-    func sendWebSocket(data: Data?, opcode: NWProtocolWebSocket.Opcode) {
+    func sendWebSocket(data: Data?,
+                       opcode: NWProtocolWebSocket.Opcode,
+                       completion: NWConnection.SendCompletion = .idempotent)
+    {
         let metadata = NWProtocolWebSocket.Metadata(opcode: opcode)
         let context = NWConnection.ContentContext(identifier: "context", metadata: [metadata])
-        send(content: data, contentContext: context, isComplete: true, completion: .idempotent)
+        send(content: data, contentContext: context, isComplete: true, completion: completion)
     }
 }
 
@@ -61,9 +47,9 @@ enum NetworkResponse<T> {
     func isSuccessful() -> Bool {
         switch self {
         case .success:
-            return true
+            true
         default:
-            return false
+            false
         }
     }
 }
@@ -80,7 +66,7 @@ func makeUrl(_ path: String, _ parameters: [(String, String)]) -> String {
 func makeMdnsHostname(deviceName: String) -> String {
     let name = deviceName
         .lowercased()
-        .replacingOccurrences(of: " ", with: "-")
+        .replace(" ", "-")
         .replacing(/-+/, with: "-")
         .trimmingCharacters(in: ["-"])
         .replacing(/[^\w\d-]/, with: "")
@@ -91,6 +77,7 @@ func httpRequest(request: URLRequest,
                  queue: DispatchQueue = .main,
                  completion: ((Data?, URLResponse?, (any Error)?) -> Void)? = nil)
 {
+    nonisolated(unsafe) let completion = completion
     URLSession.shared.dataTask(with: request) { data, response, error in
         queue.async {
             completion?(data, response, error)
@@ -104,4 +91,37 @@ func getHttpsUrl(text: String) -> URL? {
         return url
     }
     return nil
+}
+
+extension WKWebViewConfiguration {
+    func setHttpProxy(endpoint: NWEndpoint?) {
+        guard #available(iOS 17, *) else {
+            return
+        }
+        if let endpoint {
+            websiteDataStore.proxyConfigurations = [
+                .init(httpCONNECTProxy: endpoint),
+            ]
+        } else {
+            websiteDataStore.proxyConfigurations = []
+        }
+    }
+}
+
+extension URL {
+    func isLoopback() -> Bool {
+        guard let host = host()?.trimmingCharacters(in: ["[", "]"]) else {
+            return false
+        }
+        if host == "localhost" {
+            return true
+        }
+        if let address = IPv4Address(host) {
+            return address.isLoopback
+        }
+        if let address = IPv6Address(host) {
+            return address.isLoopback
+        }
+        return false
+    }
 }

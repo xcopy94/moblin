@@ -6,13 +6,13 @@ struct StreamWizardNetworkSetupDirectSettingsView: View {
     @State var ingestError = ""
 
     private func nextDisabled() -> Bool {
-        return createStreamWizard.directIngest.isEmpty || createStreamWizard.directStreamKey
+        createStreamWizard.directIngest.isEmpty || createStreamWizard.directStreamKey
             .isEmpty || !ingestError
             .isEmpty
     }
 
     private func twitchStreamKeyUrl() -> String {
-        return "https://dashboard.twitch.tv/u/\(createStreamWizard.twitchChannelName.trim())/settings/stream"
+        "https://dashboard.twitch.tv/u/\(createStreamWizard.twitchChannelName.trim())/settings/stream"
     }
 
     private func updateIngestError() {
@@ -162,6 +162,8 @@ struct StreamWizardNetworkSetupDirectSettingsView: View {
             case .custom:
                 EmptyView()
             case .obs:
+                EmptyView()
+            case .mobcam:
                 EmptyView()
             }
             Section {

@@ -2,15 +2,35 @@ import AVFoundation
 import SwiftUI
 
 func randomString() -> String {
-    return Data.random(length: 64).base64EncodedString()
+    Data.random(length: 64).base64EncodedString()
+}
+
+func startBlockingThread(name: String, _ block: @escaping @Sendable () -> Void) {
+    let thread = Thread(block: block)
+    thread.name = name
+    thread.qualityOfService = .userInteractive
+    thread.start()
 }
 
 func randomHumanString() -> String {
-    return Data.random(length: 15).base64EncodedString().replacingOccurrences(
+    Data.random(length: 15).base64EncodedString().replacingOccurrences(
         of: "[+/=]",
         with: "",
         options: .regularExpression
     )
+}
+
+extension String {
+    func removeAllWhitespaces() -> String {
+        replacingOccurrences(of: "\\s", with: "", options: .regularExpression)
+    }
+
+    func truncate(length: Int) -> String {
+        guard count > length else {
+            return self
+        }
+        return prefix(max(length - 3, 0)) + String("...".prefix(length))
+    }
 }
 
 func randomName() -> String {
@@ -18,11 +38,12 @@ func randomName() -> String {
     return colors.randomElement() ?? "Black"
 }
 
+@MainActor
 func openUrl(url: String) {
-    return UIApplication.shared.open(URL(string: url)!)
+    UIApplication.shared.open(URL(string: url)!)
 }
 
-private var thumbnails: [URL: UIImage] = [:]
+private nonisolated(unsafe) var thumbnails: [URL: UIImage] = [:]
 private let thumbnailQueue = DispatchQueue(label: "com.eerimoq.moblin.thumbnail")
 
 private func createThumbnailInternal(path: URL, offset: Double) -> UIImage? {
@@ -43,7 +64,7 @@ private func createThumbnailInternal(path: URL, offset: Double) -> UIImage? {
     }
 }
 
-func createThumbnail(path: URL, offset: Double = 0, onComplete: @escaping (UIImage?) -> Void) {
+func createThumbnail(path: URL, offset: Double = 0, onComplete: @escaping @MainActor (UIImage?) -> Void) {
     thumbnailQueue.async {
         let image = createThumbnailInternal(path: path, offset: offset)
         DispatchQueue.main.async {
@@ -53,11 +74,11 @@ func createThumbnail(path: URL, offset: Double = 0, onComplete: @escaping (UIIma
 }
 
 func currentPresentationTimeStamp() -> CMTime {
-    return CMClockGetTime(CMClockGetHostTimeClock())
+    CMClockGetTime(CMClockGetHostTimeClock())
 }
 
 func utcTimeDeltaFromNow(to: Double) -> Double {
-    return Date(timeIntervalSince1970: to).timeIntervalSinceNow
+    Date(timeIntervalSince1970: to).timeIntervalSinceNow
 }
 
 func emojiFlag(countryCode: String?) -> String {
@@ -78,7 +99,7 @@ func uploadImage(
     fileName: String,
     image: Data,
     message: String?,
-    onCompleted: ((Bool) -> Void)? = nil
+    onCompleted: (@MainActor (Bool) -> Void)? = nil
 ) {
     let boundary = UUID().uuidString
     var request = URLRequest(url: url)
@@ -104,34 +125,41 @@ func uploadImage(
 
 extension CGSize {
     func minimum() -> CGFloat {
-        return min(height, width)
+        min(height, width)
     }
 
     func maximum() -> CGFloat {
-        return max(height, width)
+        max(height, width)
     }
 }
 
 class ResourceUsage {
     private var previousTime: ContinuousClock.Instant?
     private var previousUsage: rusage?
+    private var previousCpuTicks: [[UInt32]]?
+    private var appCpuUsage: Float = 0
     private var cpuUsage: Float = 0
     private var memoryUsage: UInt64 = 0
 
     func update(now: ContinuousClock.Instant) {
-        updateCpuUsage(now: now)
+        updateAppCpuUsage(now: now)
+        updateCpuUsage()
         updateMemoryUsage()
     }
 
+    func getAppCpuUsage() -> Int {
+        Int(appCpuUsage)
+    }
+
     func getCpuUsage() -> Int {
-        return Int(cpuUsage)
+        Int(cpuUsage)
     }
 
     func getMemoryUsage() -> Int {
-        return Int(memoryUsage)
+        Int(memoryUsage)
     }
 
-    private func updateCpuUsage(now: ContinuousClock.Instant) {
+    private func updateAppCpuUsage(now: ContinuousClock.Instant) {
         var usage = rusage()
         guard getrusage(RUSAGE_SELF, &usage) == 0 else {
             return
@@ -140,10 +168,48 @@ class ResourceUsage {
             let systemTime = usage.ru_stime.milliseconds - previousUsage.ru_stime.milliseconds
             let userTime = usage.ru_utime.milliseconds - previousUsage.ru_utime.milliseconds
             let time = Float(systemTime + userTime)
-            cpuUsage = 100 * time / Float(previousTime.duration(to: now).milliseconds)
+            appCpuUsage = 100 * time / Float(previousTime.duration(to: now).milliseconds)
         }
         previousTime = now
         previousUsage = usage
+    }
+
+    private func updateCpuUsage() {
+        var numberOfCpus: natural_t = 0
+        var info: processor_info_array_t?
+        var infoCount: mach_msg_type_number_t = 0
+        let kerr = host_processor_info(mach_host_self(),
+                                       PROCESSOR_CPU_LOAD_INFO,
+                                       &numberOfCpus,
+                                       &info,
+                                       &infoCount)
+        guard kerr == KERN_SUCCESS, let info else {
+            return
+        }
+        defer {
+            vm_deallocate(mach_task_self_,
+                          vm_address_t(bitPattern: UnsafeRawPointer(info)),
+                          vm_size_t(infoCount) * vm_size_t(MemoryLayout<integer_t>.size))
+        }
+        let states = Int(CPU_STATE_MAX)
+        let ticks = (0 ..< Int(numberOfCpus)).map { cpu in
+            (0 ..< states).map { UInt32(bitPattern: info[cpu * states + $0]) }
+        }
+        if let previousCpuTicks, previousCpuTicks.count == ticks.count {
+            var usage: Float = 0
+            for (current, previous) in zip(ticks, previousCpuTicks) {
+                let user = Float(current[Int(CPU_STATE_USER)] &- previous[Int(CPU_STATE_USER)])
+                let system = Float(current[Int(CPU_STATE_SYSTEM)] &- previous[Int(CPU_STATE_SYSTEM)])
+                let idle = Float(current[Int(CPU_STATE_IDLE)] &- previous[Int(CPU_STATE_IDLE)])
+                let nice = Float(current[Int(CPU_STATE_NICE)] &- previous[Int(CPU_STATE_NICE)])
+                let total = user + system + idle + nice
+                if total > 0 {
+                    usage += 100 * (user + system + nice) / total
+                }
+            }
+            cpuUsage = usage
+        }
+        previousCpuTicks = ticks
     }
 
     private func updateMemoryUsage() {
@@ -179,11 +245,11 @@ func generateQrCode(from string: String) -> UIImage? {
     return UIImage(cgImage: cgImage)
 }
 
-func tryGetToastSubTitle(error: Error) -> String? {
+func tryGetToastSubTitle(error: any Error) -> String? {
     if let error = error as? AVError {
-        return error._nsError.localizedFailureReason
+        error._nsError.localizedFailureReason
     } else {
-        return nil
+        nil
     }
 }
 
@@ -195,7 +261,7 @@ extension CMTime {
 
 extension Data {
     static func random(length: Int) -> Data {
-        return Data((0 ..< length).map { _ in UInt8.random(in: UInt8.min ... UInt8.max) })
+        Data((0 ..< length).map { _ in UInt8.random(in: UInt8.min ... UInt8.max) })
     }
 }
 
@@ -235,8 +301,8 @@ protocol Named {
     var name: String { get }
 }
 
-func makeUniqueName<T: Named>(name: String, existingNames: [T]) -> String {
-    let existingNames = existingNames.map { $0.name }
+func makeUniqueName(name: String, existingNames: [some Named]) -> String {
+    let existingNames = existingNames.map(\.name)
     if !existingNames.contains(name) {
         return name
     }
@@ -264,25 +330,26 @@ func makeRecordingPath(recordingPath: Data) -> URL? {
 }
 
 func zoomToFieldOfView(zoom: Float, zoomOne: Float = .pi / 2) -> Float {
-    return 2 * atan(tan(zoomOne / 2) / zoom)
+    2 * atan(tan(zoomOne / 2) / zoom)
 }
 
 func fieldOfViewToZoom(fieldOfView: Float, zoomOne: Float = .pi / 2) -> Float {
-    return tan(zoomOne / 2) / tan(fieldOfView / 2)
+    tan(zoomOne / 2) / tan(fieldOfView / 2)
 }
 
 extension Locale.Language {
     func name() -> String {
-        return NSLocale.current.localizedString(forIdentifier: minimalIdentifier) ?? "Unknown"
+        NSLocale.current.localizedString(forIdentifier: minimalIdentifier) ?? "Unknown"
     }
 }
 
 extension AVAsset {
     func duration() -> Double {
         let semaphore = DispatchSemaphore(value: 0)
-        var duration: Double?
+        nonisolated(unsafe) var duration: Double?
+        nonisolated(unsafe) let asset = self
         Task {
-            duration = try? await load(.duration).seconds
+            duration = try? await asset.load(.duration).seconds
             semaphore.signal()
         }
         semaphore.wait()
@@ -362,7 +429,7 @@ func clockAsMinutesAndSeconds(clock: String) -> (Int, Int) {
     }
 }
 
-extension Array where Element == String {
+extension [String] {
     func withCPointers<T>(_ body: (UnsafeMutablePointer<UnsafePointer<CChar>?>) -> T) -> T {
         let pointersArray = UnsafeMutablePointer<UnsafePointer<CChar>?>.allocate(capacity: count)
         defer {
@@ -403,9 +470,30 @@ private let filenameDateFormatter: DateFormatter = {
 }()
 
 func formatFilenameDateAndTime(date: Date? = nil) -> String {
-    return filenameDateFormatter.string(from: date ?? Date()).replacing(/\s+/, with: "_")
+    filenameDateFormatter.string(from: date ?? Date()).replacing(/\s+/, with: "_")
+}
+
+private let filenameDateFormatterIsoish: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = .gmt
+    formatter.dateFormat = "yyyy-MM-dd_HHmmss-SSS"
+    return formatter
+}()
+
+func formatFilenameDateAndTimeIsoish(date: Date? = nil) -> String {
+    filenameDateFormatterIsoish.string(from: date ?? Date()).replacing(/\s+/, with: "_")
 }
 
 func extractSrtStreamId(url: String) -> String? {
-    return URL(string: url)?.dictionaryFromQuery()["streamid"]
+    URL(string: url)?.dictionaryFromQuery()["streamid"]
+}
+
+extension String {
+    init(cArray: [CChar]) {
+        self = cArray.withUnsafeBufferPointer {
+            String(cString: $0.baseAddress!)
+        }
+    }
 }

@@ -1,35 +1,34 @@
-import NetworkExtension
 import SwiftUI
 
-private func rtmpStreamUrl(address: String, port: UInt16, streamKey: String) -> String {
-    return "rtmp://\(address):\(port)\(rtmpServerApp)/\(streamKey)"
+func rtmpServerStreamUrl(address: String, port: UInt16, streamKey: String) -> String {
+    "rtmp://\(address):\(port)\(rtmpServerApp)/\(streamKey)"
 }
 
 func formatDjiDeviceState(state: DjiDeviceState?) -> String {
     if state == nil || state == .idle {
-        return String(localized: "Not started")
+        String(localized: "Not started")
     } else if state == .discovering {
-        return String(localized: "Discovering")
+        String(localized: "Discovering")
     } else if state == .connecting {
-        return String(localized: "Connecting")
+        String(localized: "Connecting")
     } else if state == .checkingIfPaired || state == .pairing {
-        return String(localized: "Pairing")
+        String(localized: "Pairing")
     } else if state == .stoppingStream || state == .cleaningUp {
-        return String(localized: "Stopping stream")
+        String(localized: "Stopping stream")
     } else if state == .preparingStream {
-        return String(localized: "Preparing to stream")
+        String(localized: "Preparing to stream")
     } else if state == .settingUpWifi {
-        return String(localized: "Setting up WiFi")
+        String(localized: "Setting up WiFi")
     } else if state == .wifiSetupFailed {
-        return String(localized: "WiFi setup failed")
+        String(localized: "WiFi setup failed")
     } else if state == .configuring {
-        return String(localized: "Configuring")
+        String(localized: "Configuring")
     } else if state == .startingStream {
-        return String(localized: "Starting stream")
+        String(localized: "Starting stream")
     } else if state == .streaming {
-        return String(localized: "Streaming")
+        String(localized: "Streaming")
     } else {
-        return String(localized: "Unknown")
+        String(localized: "Unknown")
     }
 }
 
@@ -71,47 +70,119 @@ private struct DjiDeviceSelectDeviceSettingsView: View {
 }
 
 private struct DjiDeviceWiFiSettingsView: View {
+    let model: Model
     @ObservedObject var device: SettingsDjiDevice
 
     var body: some View {
         Section {
             NavigationLink {
-                TextEditView(
-                    title: String(localized: "SSID"),
-                    value: device.wifiSsid,
-                    onSubmit: {
-                        device.wifiSsid = $0
-                    }
-                )
+                DjiDeviceWiFiSettingsInnerView(database: model.database, device: device)
             } label: {
-                TextItemLocalizedView(name: "SSID", value: device.wifiSsid)
+                TextItemLocalizedView(name: "Network", value: device.wifiSsid)
             }
             .disabled(device.isStarted)
-            NavigationLink {
-                TextEditView(
-                    title: String(localized: "Password"),
-                    value: device.wifiPassword,
-                    onSubmit: {
-                        device.wifiPassword = $0
-                    }
-                )
-            } label: {
-                TextItemLocalizedView(name: "Password", value: device.wifiPassword, sensitive: true)
+            if device.wifiSsid.isEmpty {
+                Text("⚠️ Enter the SSID of the network the DJI device should connect to.")
             }
-            .disabled(device.isStarted)
         } header: {
             Text("WiFi")
         } footer: {
             Text("The DJI device will connect to and stream RTMP over this WiFi.")
         }
-        .onAppear {
-            NEHotspotNetwork.fetchCurrent(completionHandler: { network in
-                if device.wifiSsid.isEmpty, let network {
-                    device.wifiSsid = network.ssid
-                }
-            })
+    }
+}
+
+private struct DjiDeviceWiFiSettingsInnerView: View {
+    @ObservedObject var database: Database
+    @ObservedObject var device: SettingsDjiDevice
+
+    private func updateSavedNetworks() {
+        guard !device.wifiSsid.isEmpty else {
+            return
+        }
+        if let network = database.getSavedWiFiNetwork(ssid: device.wifiSsid) {
+            network.password = device.wifiPassword
+        } else {
+            let network = SettingsWiFi()
+            network.ssid = device.wifiSsid
+            network.password = device.wifiPassword
+            database.savedWifiNetworks.append(network)
         }
     }
+
+    var body: some View {
+        Form {
+            Section {
+                NavigationLink {
+                    WiFiSsidEditView(value: device.wifiSsid) {
+                        device.wifiSsid = $0
+                        if device.wifiPassword.isEmpty,
+                           let network = database.getSavedWiFiNetwork(ssid: device.wifiSsid)
+                        {
+                            device.wifiPassword = network.password
+                        }
+                        updateSavedNetworks()
+                    }
+                } label: {
+                    TextItemLocalizedView(name: "SSID", value: device.wifiSsid)
+                }
+                NavigationLink {
+                    TextEditView(
+                        title: String(localized: "Password"),
+                        value: device.wifiPassword,
+                        onSubmit: {
+                            device.wifiPassword = $0
+                            updateSavedNetworks()
+                        }
+                    )
+                } label: {
+                    TextItemLocalizedView(name: "Password", value: device.wifiPassword, sensitive: true)
+                }
+            } header: {
+                Text("Network")
+            }
+            if !database.savedWifiNetworks.isEmpty {
+                Section {
+                    ForEach(database.savedWifiNetworks) { network in
+                        Button {
+                            device.wifiSsid = network.ssid
+                            device.wifiPassword = network.password
+                        } label: {
+                            HStack {
+                                Text(network.ssid)
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                if device.wifiSsid == network.ssid, device.wifiPassword == network.password {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                        }
+                        .contextMenu {
+                            if isMac() {
+                                ContextMenuDeleteButtonView {
+                                    database.savedWifiNetworks.removeAll(where: { $0.ssid == network.ssid })
+                                }
+                            }
+                        }
+                    }
+                    .onDelete { offsets in
+                        database.savedWifiNetworks.remove(atOffsets: offsets)
+                    }
+                } header: {
+                    Text("Saved networks")
+                } footer: {
+                    SwipeLeftToDeleteHelpView(kind: String(localized: "a network"))
+                }
+            }
+        }
+        .navigationTitle("WiFi")
+    }
+}
+
+private struct RtmpUrlAndImage {
+    let url: String
+    let image: String
 }
 
 private struct DjiDeviceRtmpSettingsView: View {
@@ -120,29 +191,34 @@ private struct DjiDeviceRtmpSettingsView: View {
     @ObservedObject var status: StatusOther
     @ObservedObject var rtmpServer: SettingsRtmpServer
 
-    private func serverUrls() -> [String] {
+    private func serverUrls() -> [RtmpUrlAndImage] {
         guard let stream = model.getRtmpStream(id: device.serverRtmpStreamId) else {
             return []
         }
-        var serverUrls: [String] = []
+        var serverUrls: [RtmpUrlAndImage] = []
         for status in status.ipStatuses.filter({ $0.ipType == .ipv4 }) {
-            serverUrls.append(rtmpStreamUrl(
+            serverUrls.append(RtmpUrlAndImage(url: rtmpServerStreamUrl(
                 address: status.ipType.formatAddress(status.ip),
                 port: rtmpServer.port,
                 streamKey: stream.streamKey
-            ))
+            ), image: urlImage(interfaceType: status.interfaceType)))
         }
-        serverUrls.append(rtmpStreamUrl(
+        serverUrls.append(RtmpUrlAndImage(url: rtmpServerStreamUrl(
             address: personalHotspotLocalAddress,
             port: rtmpServer.port,
             streamKey: stream.streamKey
-        ))
+        ), image: "personalhotspot"))
         for status in status.ipStatuses.filter({ $0.ipType == .ipv6 }) {
-            serverUrls.append(rtmpStreamUrl(
+            serverUrls.append(RtmpUrlAndImage(url: rtmpServerStreamUrl(
                 address: status.ipType.formatAddress(status.ip),
                 port: rtmpServer.port,
                 streamKey: stream.streamKey
-            ))
+            ), image: urlImage(interfaceType: status.interfaceType)))
+        }
+        if let serverRtmpUrl = device.serverRtmpUrl,
+           !serverUrls.contains(where: { $0.url == serverRtmpUrl })
+        {
+            serverUrls.insert(RtmpUrlAndImage(url: serverRtmpUrl, image: "questionmark"), at: 0)
         }
         return serverUrls
     }
@@ -166,16 +242,31 @@ private struct DjiDeviceRtmpSettingsView: View {
                         }
                     }
                     .onChange(of: device.serverRtmpStreamId) { _ in
-                        device.serverRtmpUrl = serverUrls().first ?? ""
+                        device.serverRtmpUrl = nil
                     }
                     .disabled(device.isStarted)
                     Picker("URL", selection: $device.serverRtmpUrl) {
-                        ForEach(serverUrls(), id: \.self) { serverUrl in
-                            Text(serverUrl)
-                                .tag(serverUrl)
+                        Section("Auto IP address") {
+                            HStack {
+                                Image(systemName: "wifi")
+                                Text(model.automaticServerRtmpUrl(device: device) ?? "")
+                            }
+                            .tag(nil as String?)
+                        }
+                        Section("Fixed IP address") {
+                            ForEach(serverUrls(), id: \.url) { item in
+                                HStack {
+                                    Image(systemName: item.image)
+                                    Text(item.url)
+                                }
+                                .tag(item.url as String?)
+                            }
                         }
                     }
                     .disabled(device.isStarted)
+                    if device.serverRtmpUrl == nil, !status.isConnectedToIpv4WiFi() {
+                        Text("⚠️ Not connected to an IPv4 WiFi network.")
+                    }
                     if !rtmpServer.enabled {
                         Text("⚠️ The RTMP server is not enabled")
                     }
@@ -189,6 +280,9 @@ private struct DjiDeviceRtmpSettingsView: View {
                     }
                 )
                 .disabled(device.isStarted)
+                if device.customRtmpUrl.isEmpty {
+                    Text("⚠️ Enter the URL the DJI device should stream to.")
+                }
             }
         } header: {
             Text("RTMP")
@@ -204,9 +298,6 @@ private struct DjiDeviceRtmpSettingsView: View {
             if !streams.isEmpty {
                 if !streams.contains(where: { $0.id == device.serverRtmpStreamId }) {
                     device.serverRtmpStreamId = streams.first!.id
-                }
-                if !serverUrls().contains(where: { $0 == device.serverRtmpUrl }) {
-                    device.serverRtmpUrl = serverUrls().first ?? ""
                 }
             }
         }
@@ -233,7 +324,7 @@ private struct DjiDeviceSettingsSettingsView: View {
                 }
             }
             .disabled(device.isStarted)
-            if device.model.hasImageStabilizatin() {
+            if device.model.hasImageStabilization() {
                 Picker("Image stabilization", selection: $device.imageStabilization) {
                     ForEach(SettingsDjiDeviceImageStabilization.allCases, id: \.self) {
                         Text($0.toString())
@@ -241,10 +332,18 @@ private struct DjiDeviceSettingsSettingsView: View {
                 }
                 .disabled(device.isStarted)
             }
-            if device.model == .osmoPocket3 {
+            if device.model == .osmoPocket3 || device.model == .osmoPocket4 {
                 Picker("FPS", selection: $device.fps) {
                     ForEach(djiDeviceFpss, id: \.self) {
                         Text(String($0))
+                    }
+                }
+                .disabled(device.isStarted)
+            }
+            if device.model.hasVideoCodec() {
+                Picker("Video codec", selection: $device.videoCodec) {
+                    ForEach(SettingsDjiDeviceVideoCodec.allCases, id: \.self) {
+                        Text($0.rawValue)
                     }
                 }
                 .disabled(device.isStarted)
@@ -273,6 +372,7 @@ private struct DjiDeviceAutoRestartSettingsView: View {
 
 private struct DjiDeviceStartStopButtonSettingsView: View {
     @EnvironmentObject var model: Model
+    @ObservedObject var status: StatusOther
     @ObservedObject var device: SettingsDjiDevice
 
     var body: some View {
@@ -282,7 +382,7 @@ private struct DjiDeviceStartStopButtonSettingsView: View {
                     model.startDjiDeviceLiveStream(device: device)
                 }
             }
-            .disabled(!device.canStartLive())
+            .disabled(!device.canStartLive(status.isConnectedToIpv4WiFi()))
         } else {
             Section {
                 TextButtonView("Stop live stream") {
@@ -302,7 +402,7 @@ struct DjiDeviceSettingsView: View {
     @ObservedObject var status: StatusTopRight
 
     func state() -> String {
-        return formatDjiDeviceState(state: status.djiDeviceStreamingState)
+        formatDjiDeviceState(state: status.djiDeviceStreamingState)
     }
 
     var body: some View {
@@ -311,7 +411,7 @@ struct DjiDeviceSettingsView: View {
                 NameEditView(name: $device.name, existingNames: djiDevices.devices)
             }
             DjiDeviceSelectDeviceSettingsView(device: device)
-            DjiDeviceWiFiSettingsView(device: device)
+            DjiDeviceWiFiSettingsView(model: model, device: device)
             DjiDeviceRtmpSettingsView(
                 device: device,
                 status: model.statusOther,
@@ -324,7 +424,7 @@ struct DjiDeviceSettingsView: View {
                     Text(state())
                 }
             }
-            DjiDeviceStartStopButtonSettingsView(device: device)
+            DjiDeviceStartStopButtonSettingsView(status: model.statusOther, device: device)
         }
         .onAppear {
             model.setCurrentDjiDevice(device: device)

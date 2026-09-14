@@ -2,15 +2,15 @@ import SwiftUI
 
 private func formatWorkoutDeviceState(state: WorkoutDeviceState?) -> String {
     if state == nil || state == .disconnected {
-        return String(localized: "Disconnected")
+        String(localized: "Disconnected")
     } else if state == .discovering {
-        return String(localized: "Discovering")
+        String(localized: "Discovering")
     } else if state == .connecting {
-        return String(localized: "Connecting")
+        String(localized: "Connecting")
     } else if state == .connected {
-        return String(localized: "Connected")
+        String(localized: "Connected")
     } else {
-        return String(localized: "Unknown")
+        String(localized: "Unknown")
     }
 }
 
@@ -22,11 +22,32 @@ struct WorkoutDeviceSettingsView: View {
     @ObservedObject private var scanner = workoutDeviceScanner
 
     private func state() -> String {
-        return formatWorkoutDeviceState(state: status.workoutDeviceState)
+        formatWorkoutDeviceState(state: status.workoutDeviceState)
     }
 
     private func canEnable() -> Bool {
-        return device.bluetoothPeripheralId != nil
+        device.bluetoothPeripheralId != nil
+    }
+
+    private func isValidWheelCircumference(value: String) -> String? {
+        guard let millimeters = Int(value) else {
+            return String(localized: "Not a number")
+        }
+        guard millimeters >= 500 else {
+            return String(localized: "Too small")
+        }
+        guard millimeters <= 3000 else {
+            return String(localized: "Too big")
+        }
+        return nil
+    }
+
+    private func submitWheelCircumference(value: String) {
+        guard let millimeters = Int(value) else {
+            return
+        }
+        device.wheelCircumference = millimeters
+        model.setWorkoutDeviceWheelCircumference(device: device)
     }
 
     private func onDeviceChange(value: String) {
@@ -75,6 +96,18 @@ struct WorkoutDeviceSettingsView: View {
                             }
                         }
                         .disabled(!canEnable())
+                }
+                Section {
+                    TextEditNavigationView(
+                        title: String(localized: "Wheel circumference"),
+                        value: String(device.wheelCircumference),
+                        onChange: isValidWheelCircumference,
+                        onSubmit: submitWheelCircumference,
+                        keyboardType: .numbersAndPunctuation,
+                        valueFormat: { "\($0) mm" }
+                    )
+                } footer: {
+                    Text("Used to calculate speed from wheel revolutions.")
                 }
                 if device.enabled {
                     Section {

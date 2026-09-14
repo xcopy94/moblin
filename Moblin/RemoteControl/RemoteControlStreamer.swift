@@ -1,23 +1,27 @@
 import Foundation
 import Network
-import SwiftUI
 
 protocol RemoteControlStreamerDelegate: AnyObject {
     func remoteControlStreamerConnected()
     func remoteControlStreamerDisconnected()
+    func remoteControlStreamerWrongPassword()
     func remoteControlStreamerGetStatus()
         -> (RemoteControlStatusGeneral, RemoteControlStatusTopLeft, RemoteControlStatusTopRight)
     func remoteControlStreamerGetSettings() -> RemoteControlSettings
+    func remoteControlStreamerSetStream(id: UUID)
     func remoteControlStreamerSetScene(id: UUID)
     func remoteControlStreamerSetAutoSceneSwitcher(id: UUID?)
     func remoteControlStreamerSetMic(id: String)
+    func remoteControlStreamerSetTalkbackMic(id: String)
     func remoteControlStreamerSetBitratePreset(id: UUID)
     func remoteControlStreamerSetRecord(on: Bool)
-    func remoteControlStreamerSetStream(on: Bool)
+    func remoteControlStreamerSetLive(on: Bool)
+    func remoteControlStreamerSetPreviewStream(on: Bool)
     func remoteControlStreamerSetDebugLogging(on: Bool)
     func remoteControlStreamerSetZoom(x: Float)
     func remoteControlStreamerSetZoomPreset(id: UUID)
     func remoteControlStreamerSetMute(on: Bool)
+    func remoteControlStreamerSetStealthMode(on: Bool)
     func remoteControlStreamerSetTorch(on: Bool)
     func remoteControlStreamerReloadBrowserWidgets()
     func remoteControlStreamerSetSrtConnectionPriority(id: UUID, priority: Int, enabled: Bool)
@@ -46,33 +50,46 @@ protocol RemoteControlStreamerDelegate: AnyObject {
     func remoteControlStreamerSetFilter(filter: RemoteControlFilter, on: Bool)
     func remoteControlStreamerTriggerReaction(reaction: RemoteControlReaction)
     func remoteControlStreamerMoveToGimbalPreset(id: UUID)
+    func remoteControlStreamerSetGimbalTracking(on: Bool)
+    func remoteControlStreamerSetGimbalMovement(x: Float, y: Float)
+    func remoteControlStreamerAnimateGimbal(motion: SettingsGimbalMotion)
+    func remoteControlStreamerSaveGimbalPreset()
+    func remoteControlStreamerImportSettings(settings: Data, onCompleted: @escaping (Bool) -> Void)
+    func remoteControlStreamerStartStats(filter: RemoteControlStartStatsFilter?)
+    func remoteControlStreamerStopStats()
+    func remoteControlStreamerStartMacro(id: UUID)
+    func remoteControlStreamerStopMacro(id: UUID)
+    func remoteControlStreamerSendMessage(text: String)
 }
+
+private let idStorage = SimpleStringStorage(key: "remoteControlStreamerId")
 
 class RemoteControlStreamer {
     private var clientUrl: URL
     private var password: String
-    private weak var delegate: RemoteControlStreamerDelegate?
+    private weak var delegate: (any RemoteControlStreamerDelegate)?
     private var webSocket: WebSocketClient
     var connectionErrorMessage: String = ""
     private var connected = false
     private var encryption: RemoteControlEncryption
     private let keepAliveTimer = SimpleTimer(queue: .main)
     private var gotPong = true
-    @AppStorage("remoteControlStreamerId") var id = ""
+    private var wrongPassword = false
 
-    init(clientUrl: URL, password: String, delegate: RemoteControlStreamerDelegate) {
+    init(clientUrl: URL, password: String, delegate: any RemoteControlStreamerDelegate) {
         self.clientUrl = clientUrl
         self.password = password
         self.delegate = delegate
         encryption = RemoteControlEncryption(password: password)
         webSocket = .init(url: clientUrl)
-        if id.isEmpty {
-            id = UUID().uuidString
+        if idStorage.get().isEmpty {
+            idStorage.set(UUID().uuidString)
         }
     }
 
     func start() {
         logger.debug("remote-control-streamer: start")
+        wrongPassword = false
         startInternal()
     }
 
@@ -84,19 +101,30 @@ class RemoteControlStreamer {
     private func startInternal() {
         stopInternal()
         gotPong = true
-        webSocket = .init(url: clientUrl)
+        webSocket = .init(url: clientUrl, loopback: clientUrl.isLoopback())
         webSocket.delegate = self
         webSocket.start()
     }
 
     func stopInternal() {
-        connected = false
+        webSocket.delegate = nil
         webSocket.stop()
+        handleDisconnected()
+    }
+
+    private func handleDisconnected() {
         stopKeepAlive()
+        if connected {
+            delegate?.remoteControlStreamerDisconnected()
+        }
+        connected = false
+        if !wrongPassword {
+            connectionErrorMessage = String(localized: "Disconnected")
+        }
     }
 
     func isConnected() -> Bool {
-        return connected
+        connected
     }
 
     func stateChanged(state: RemoteControlAssistantStreamerState) {
@@ -115,6 +143,13 @@ class RemoteControlStreamer {
 
     func sendScoreboardUpdate(config: RemoteControlScoreboardMatchConfig) {
         send(message: .event(data: .scoreboard(config: config)))
+    }
+
+    func sendStats(data: RemoteControlStats) {
+        guard connected else {
+            return
+        }
+        send(message: .event(data: .stats(data: data)))
     }
 
     func sendPreview(preview: Data) {
@@ -194,19 +229,24 @@ class RemoteControlStreamer {
             salt: authentication.salt,
             password: password
         )
-        send(message: .identify(streamerId: id, authentication: hash))
+        send(message: .identify(streamerId: idStorage.get(), authentication: hash))
     }
 
     private func handleIdentified(result: RemoteControlResult) -> Bool {
         switch result {
         case .ok:
             connected = true
+            wrongPassword = false
             delegate?.remoteControlStreamerConnected()
             return true
         case .wrongPassword:
-            connectionErrorMessage = "Wrong password"
+            connectionErrorMessage = String(localized: "Wrong password")
+            if !wrongPassword {
+                wrongPassword = true
+                delegate?.remoteControlStreamerWrongPassword()
+            }
         default:
-            connectionErrorMessage = "Failed to identify"
+            connectionErrorMessage = String(localized: "Failed to identify")
         }
         return false
     }
@@ -226,6 +266,9 @@ class RemoteControlStreamer {
         case .getSettings:
             let data = delegate.remoteControlStreamerGetSettings()
             send(message: .response(id: id, result: .ok, data: .getSettings(data: data)))
+        case let .setStream(id: streamId):
+            delegate.remoteControlStreamerSetStream(id: streamId)
+            sendEmptyOkResponse(id: id)
         case let .setScene(id: sceneId):
             delegate.remoteControlStreamerSetScene(id: sceneId)
             sendEmptyOkResponse(id: id)
@@ -235,14 +278,20 @@ class RemoteControlStreamer {
         case let .setMic(id: micId):
             delegate.remoteControlStreamerSetMic(id: micId)
             sendEmptyOkResponse(id: id)
+        case let .setTalkbackMic(id: micId):
+            delegate.remoteControlStreamerSetTalkbackMic(id: micId)
+            sendEmptyOkResponse(id: id)
         case let .setBitratePreset(id: bitratePresetId):
             delegate.remoteControlStreamerSetBitratePreset(id: bitratePresetId)
             sendEmptyOkResponse(id: id)
         case let .setRecord(on: on):
             delegate.remoteControlStreamerSetRecord(on: on)
             sendEmptyOkResponse(id: id)
-        case let .setStream(on: on):
-            delegate.remoteControlStreamerSetStream(on: on)
+        case let .setLive(on: on):
+            delegate.remoteControlStreamerSetLive(on: on)
+            sendEmptyOkResponse(id: id)
+        case let .setPreviewStream(on: on):
+            delegate.remoteControlStreamerSetPreviewStream(on: on)
             sendEmptyOkResponse(id: id)
         case let .setZoom(x: x):
             delegate.remoteControlStreamerSetZoom(x: x)
@@ -252,6 +301,9 @@ class RemoteControlStreamer {
             sendEmptyOkResponse(id: id)
         case let .setMute(on: on):
             delegate.remoteControlStreamerSetMute(on: on)
+            sendEmptyOkResponse(id: id)
+        case let .setStealthMode(on: on):
+            delegate.remoteControlStreamerSetStealthMode(on: on)
             sendEmptyOkResponse(id: id)
         case let .setTorch(on: on):
             delegate.remoteControlStreamerSetTorch(on: on)
@@ -340,6 +392,41 @@ class RemoteControlStreamer {
         case let .moveToGimbalPreset(id: presetId):
             delegate.remoteControlStreamerMoveToGimbalPreset(id: presetId)
             sendEmptyOkResponse(id: id)
+        case let .setGimbalTracking(on: on):
+            delegate.remoteControlStreamerSetGimbalTracking(on: on)
+            sendEmptyOkResponse(id: id)
+        case let .setGimbalMovement(x: x, y: y):
+            delegate.remoteControlStreamerSetGimbalMovement(x: x, y: y)
+            sendEmptyOkResponse(id: id)
+        case let .animateGimbal(motion: motion):
+            delegate.remoteControlStreamerAnimateGimbal(motion: motion)
+            sendEmptyOkResponse(id: id)
+        case .saveGimbalPreset:
+            delegate.remoteControlStreamerSaveGimbalPreset()
+            sendEmptyOkResponse(id: id)
+        case .getGolfScoreboard:
+            sendEmptyOkResponse(id: id)
+        case .updateGolfScoreboard:
+            sendEmptyOkResponse(id: id)
+        case let .importSettings(data: data):
+            delegate.remoteControlStreamerImportSettings(settings: data) { succeeded in
+                self.send(message: .response(id: id, result: succeeded ? .ok : .error, data: nil))
+            }
+        case let .startStats(filter: filter):
+            delegate.remoteControlStreamerStartStats(filter: filter)
+            sendEmptyOkResponse(id: id)
+        case .stopStats:
+            delegate.remoteControlStreamerStopStats()
+            sendEmptyOkResponse(id: id)
+        case let .startMacro(id: macroId):
+            delegate.remoteControlStreamerStartMacro(id: macroId)
+            sendEmptyOkResponse(id: id)
+        case let .stopMacro(id: macroId):
+            delegate.remoteControlStreamerStopMacro(id: macroId)
+            sendEmptyOkResponse(id: id)
+        case let .sendMessage(text: text):
+            delegate.remoteControlStreamerSendMessage(text: text)
+            sendEmptyOkResponse(id: id)
         }
     }
 
@@ -356,12 +443,7 @@ extension RemoteControlStreamer: WebSocketClientDelegate {
 
     func webSocketClientDisconnected(_: WebSocketClient) {
         logger.info("remote-control-streamer: Disconnected")
-        stopKeepAlive()
-        if connected {
-            delegate?.remoteControlStreamerDisconnected()
-        }
-        connected = false
-        connectionErrorMessage = String(localized: "Disconnected")
+        handleDisconnected()
     }
 
     func webSocketClientReceiveMessage(_: WebSocketClient, string: String) {

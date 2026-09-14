@@ -4,6 +4,11 @@ import XMLCoder
 private struct Message: Codable {
     let from: String
     let body: String
+    // Optional per-message nickname color as a 6-digit hex string (no "#"),
+    // e.g. "bcc2cf". Not part of core XMPP MUC; servers that don't send it
+    // simply omit the attribute, which decodes to nil here and behaves
+    // exactly as before.
+    let color: String?
 
     func user() -> String? {
         guard let slashIndex = from.firstIndex(of: "/") else {
@@ -29,8 +34,8 @@ private struct Open: Codable, DynamicNodeEncoding {
     // periphery:ignore
     let id: String?
 
-    static func nodeEncoding(for _: CodingKey) -> XMLEncoder.NodeEncoding {
-        return .attribute
+    static func nodeEncoding(for _: any CodingKey) -> XMLEncoder.NodeEncoding {
+        .attribute
     }
 }
 
@@ -71,12 +76,12 @@ private struct Auth: Codable, DynamicNodeEncoding {
         case value = ""
     }
 
-    static func nodeEncoding(for key: CodingKey) -> XMLEncoder.NodeEncoding {
+    static func nodeEncoding(for key: any CodingKey) -> XMLEncoder.NodeEncoding {
         switch key {
         case CodingKeys.value:
-            return .element
+            .element
         default:
-            return .attribute
+            .attribute
         }
     }
 }
@@ -95,9 +100,10 @@ private struct FeaturesContainer: Codable {
     let features: Features
 }
 
-class OpenStreamingPlatformChat {
+@MainActor
+class OpenStreamingPlatformChat: @unchecked Sendable {
     private var model: Model
-    private var task: Task<Void, Error>?
+    private var task: Task<Void, any Error>?
     private var connected: Bool = false
     private var webSocket: URLSessionWebSocketTask
     private let url: String
@@ -150,11 +156,11 @@ class OpenStreamingPlatformChat {
     }
 
     func isConnected() -> Bool {
-        return connected
+        connected
     }
 
     func hasEmotes() -> Bool {
-        return true
+        true
     }
 
     private func setupConnection() async throws {
@@ -224,26 +230,24 @@ class OpenStreamingPlatformChat {
 
     private func handleMessageMessage(message: Message) async throws {
         let segments = createSegments(message: message.body)
-        await MainActor.run {
-            let user = message.user() ?? "unknown"
-            model.appendChatMessage(platform: .openStreamingPlatform,
-                                    messageId: nil,
-                                    displayName: user,
-                                    user: user,
-                                    userId: nil,
-                                    userColor: nil,
-                                    userBadges: [],
-                                    segments: segments,
-                                    timestamp: model.statusOther.digitalClock,
-                                    timestampTime: .now,
-                                    isAction: false,
-                                    isSubscriber: false,
-                                    isModerator: false,
-                                    isOwner: false,
-                                    bits: nil,
-                                    highlight: nil,
-                                    live: true)
-        }
+        let user = message.user() ?? "unknown"
+        model.appendChatMessage(platform: .openStreamingPlatform,
+                                messageId: nil,
+                                displayName: user,
+                                user: user,
+                                userId: nil,
+                                userColor: RgbColor.fromHex(string: message.color ?? ""),
+                                userBadges: [],
+                                segments: segments,
+                                timestamp: model.statusOther.digitalClock,
+                                timestampTime: .now,
+                                isAction: false,
+                                isSubscriber: false,
+                                isModerator: false,
+                                isOwner: false,
+                                bits: nil,
+                                highlight: nil,
+                                live: true)
     }
 
     private func handleMessageIq(message: Iq) async throws {
@@ -317,7 +321,7 @@ class OpenStreamingPlatformChat {
         )
     }
 
-    private func send(root: String, data: Encodable) async throws {
+    private func send(root: String, data: any Encodable) async throws {
         let message = try XMLEncoder().encode(data, withRootKey: root)
         guard let message = String(bytes: message, encoding: .utf8) else {
             return

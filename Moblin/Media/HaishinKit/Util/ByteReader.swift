@@ -43,15 +43,15 @@ class ByteReader {
     }
 
     func readUInt16Le() throws -> UInt16 {
-        return try UInt16(readUInt8()) | (UInt16(readUInt8()) << 8)
+        try UInt16(readUInt8()) | (UInt16(readUInt8()) << 8)
     }
 
     func readUInt24() throws -> UInt32 {
-        return try (UInt32(readUInt8()) << 16) | (UInt32(readUInt8()) << 8) | UInt32(readUInt8())
+        try (UInt32(readUInt8()) << 16) | (UInt32(readUInt8()) << 8) | UInt32(readUInt8())
     }
 
     func readUInt24Le() throws -> UInt32 {
-        return try UInt32(readUInt8()) | (UInt32(readUInt8()) << 8) | (UInt32(readUInt8()) << 16)
+        try UInt32(readUInt8()) | (UInt32(readUInt8()) << 8) | (UInt32(readUInt8()) << 16)
     }
 
     func readUInt32() throws -> UInt32 {
@@ -67,8 +67,14 @@ class ByteReader {
     }
 
     func readUInt32Le() throws -> UInt32 {
-        return try UInt32(readUInt8()) | (UInt32(readUInt8()) << 8) | (UInt32(readUInt8()) << 16) |
+        try UInt32(readUInt8()) | (UInt32(readUInt8()) << 8) | (UInt32(readUInt8()) << 16) |
             (UInt32(readUInt8()) << 24)
+    }
+
+    func readUInt64() throws -> UInt64 {
+        let high = try readUInt32()
+        let low = try readUInt32()
+        return UInt64(high) << 32 | UInt64(low)
     }
 
     func readDouble() throws -> Double {

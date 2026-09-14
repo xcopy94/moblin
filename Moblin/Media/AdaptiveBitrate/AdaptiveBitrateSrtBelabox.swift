@@ -38,7 +38,7 @@ class AdaptiveBitrateSrtBelabox: AdaptiveBitrate {
     private var nextBitrateDecrTime: ContinuousClock.Instant = .now
     private var latestBitrate: Int64 = 0 // latest control output (latest value sent to the encoder)
 
-    init(targetBitrate: UInt32, delegate: AdaptiveBitrateDelegate) {
+    init(targetBitrate: UInt32, delegate: any AdaptiveBitrateDelegate) {
         self.targetBitrate = Int64(targetBitrate)
         latestBitrate = self.targetBitrate
         super.init(delegate: delegate)
@@ -58,15 +58,15 @@ class AdaptiveBitrateSrtBelabox: AdaptiveBitrate {
     }
 
     override func getCurrentBitrate() -> UInt32 {
-        return UInt32(latestBitrate)
+        UInt32(latestBitrate)
     }
 
     override func getCurrentMaximumBitrateInKbps() -> Int64 {
-        return Int64(latestBitrate) / 1000
+        Int64(latestBitrate) / 1000
     }
 
     private func rttToSendBufferSize(rtt: Double, throughput: Double) -> Double {
-        return (throughput / 8) * rtt / 1316 // TODO: use real packet size
+        (throughput / 8) * rtt / 1316 // TODO: use real packet size
     }
 
     private func updateSendBufferSizeAverage(sendBufferSize: Double) {
@@ -153,7 +153,8 @@ class AdaptiveBitrateSrtBelabox: AdaptiveBitrate {
             nextBitrateDecrTime = currentTime.advanced(by: bitrateDecrInterval)
             logAdaptiveAction(
                 actionTaken: """
-                Set min: \(bitrateForLowering / 1000) -> \(bitrate / 1000), rtt: \(rtt) >= latency / 3: \(srtLatency / 3) \
+                Set min: \(bitrateForLowering / 1000) -> \(bitrate /
+                    1000), rtt: \(rtt) >= latency / 3: \(srtLatency / 3) \
                 or bs: \(sendBufferSize) > bs_th3: \(formatTwoDecimals(sendBufferSizeTh3))
                 """
             )
@@ -165,7 +166,8 @@ class AdaptiveBitrateSrtBelabox: AdaptiveBitrate {
             nextBitrateDecrTime = currentTime.advanced(by: bitrateDecrFastInterval)
             logAdaptiveAction(
                 actionTaken: """
-                Fast decr: \(bitrateForLowering / 1000) - \((bitrateDecrMin + bitrate / bitrateDecrScale) / 1000), \
+                Fast decr: \(bitrateForLowering / 1000) - \((bitrateDecrMin + bitrate / bitrateDecrScale) /
+                    1000), \
                 rtt: \(rtt) > latency / 5: \(srtLatency / 5) or bs: \(sendBufferSize) > bs_th2: \
                 \(formatTwoDecimals(sendBufferSizeTh2))
                 """

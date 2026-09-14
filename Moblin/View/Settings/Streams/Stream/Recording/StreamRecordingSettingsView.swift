@@ -30,7 +30,7 @@ private struct RecordingPathView: View {
     }
 
     private func getRecordingPath(recordingPath: Data) -> String {
-        return makeRecordingPath(recordingPath: recordingPath)?
+        makeRecordingPath(recordingPath: recordingPath)?
             .path() ?? String(localized: "Disk not connected?")
     }
 
@@ -104,12 +104,10 @@ struct StreamRecordingSettingsView: View {
     @ObservedObject var recording: SettingsStreamRecording
 
     private func submitVideoBitrateChange(value: String) {
-        guard var bitrate = Float(value) else {
+        guard let bitrate = Float(value) else {
             return
         }
-        bitrate = max(bitrate, 0)
-        bitrate = min(bitrate, 50)
-        recording.videoBitrate = bitrateFromMbps(bitrate: bitrate)
+        recording.videoBitrate = bitrateFromMbps(bitrate: bitrate.clamped(to: 0 ... 50))
     }
 
     private func submitMaxKeyFrameInterval(value: String) {

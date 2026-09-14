@@ -2,7 +2,6 @@ import Network
 import SwiftUI
 
 struct UrlSettingsView: View {
-    let model: Model
     let disabled: Bool
     @Binding var url: String
     @State var value: String
@@ -44,7 +43,7 @@ struct UrlSettingsView: View {
                         error = isValidUrl(url: value, allowedSchemes: allowedSchemes)
                         changed = true
                         if value.contains("\n") {
-                            value = value.replacingOccurrences(of: "\n", with: "")
+                            value = value.replace("\n", "")
                             submitUrl()
                         }
                     }
@@ -77,7 +76,7 @@ struct UrlSettingsView: View {
             }
         }
         .onDisappear {
-            if changed && !submitted {
+            if changed, !submitted {
                 submitUrl()
             }
         }
@@ -98,8 +97,7 @@ struct RtspClientStreamSettingsView: View {
                 }
                 Section {
                     NavigationLink {
-                        UrlSettingsView(model: model,
-                                        disabled: false,
+                        UrlSettingsView(disabled: false,
                                         url: $stream.url,
                                         value: stream.url,
                                         placeholder: "rtsp://192.168.1.83/stream1",
@@ -126,18 +124,7 @@ struct RtspClientStreamSettingsView: View {
                     TextEditNavigationView(
                         title: String(localized: "Latency"),
                         value: String(stream.latency),
-                        onChange: {
-                            guard let latency = Int32($0) else {
-                                return String(localized: "Not a number")
-                            }
-                            guard latency >= 5 else {
-                                return String(localized: "Too small")
-                            }
-                            guard latency <= 10000 else {
-                                return String(localized: "Too big")
-                            }
-                            return nil
-                        },
+                        onChange: isValidIngestLatency,
                         onSubmit: {
                             guard let latency = Int32($0) else {
                                 return

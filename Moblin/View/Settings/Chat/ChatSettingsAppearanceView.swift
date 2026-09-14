@@ -31,6 +31,28 @@ struct ChatSettingsAppearanceView: View {
                         Text(String(Int(chat.fontSize)))
                             .frame(width: 25)
                     }
+                    HStack {
+                        Text("Big GIF scale")
+                        Slider(
+                            value: $chat.bigGifScale,
+                            in: 1 ... 10,
+                            step: 1,
+                            label: {
+                                EmptyView()
+                            },
+                            onEditingChanged: { begin in
+                                guard !begin else {
+                                    return
+                                }
+                                model.reloadChatMessages()
+                            }
+                        )
+                        .onChange(of: chat.bigGifScale) { _ in
+                            model.reloadChatMessages()
+                        }
+                        Text(String(Int(chat.bigGifScale)))
+                            .frame(width: 25)
+                    }
                     if database.showAllSettings {
                         Picker("Display style", selection: $chat.displayStyle) {
                             ForEach(SettingsChatDisplayStyle.allCases, id: \.self) { displayStyle in
@@ -61,10 +83,10 @@ struct ChatSettingsAppearanceView: View {
                             .onChange(of: chat.sharedChatIcons) { _ in
                                 model.reloadChatMessages()
                             }
-                    }
-                } footer: {
-                    if database.showAllSettings {
-                        Text("Animated emotes are fairly CPU intensive. Disable for less power usage.")
+                        Toggle("Compact events", isOn: $chat.compactEvents)
+                            .onChange(of: chat.compactEvents) { _ in
+                                model.reloadChatMessages()
+                            }
                     }
                 }
                 Section {
@@ -85,6 +107,7 @@ struct ChatSettingsAppearanceView: View {
                                 chat.usernameColor = color
                                 model.reloadChatMessages()
                             }
+                        Toggle("Same color for all names", isOn: $chat.sameUsernameColor)
                         ColorPicker("Message", selection: $chat.messageColorColor, supportsOpacity: false)
                             .onChange(of: chat.messageColorColor) { _ in
                                 guard let color = chat.messageColorColor.toRgb() else {

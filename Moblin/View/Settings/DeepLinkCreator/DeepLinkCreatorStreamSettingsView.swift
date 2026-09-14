@@ -52,7 +52,8 @@ private struct DeepLinkCreatorStreamVideoView: View {
                         submitMaxKeyFrameInterval(value: $0)
                     }
                 } label: {
-                    TextItemView(name: "Key frame interval", value: "\(video.maxKeyFrameInterval) s")
+                    TextItemView(name: "Key frame interval",
+                                 value: formatShortDuration(seconds: Int(video.maxKeyFrameInterval)))
                 }
                 Toggle(isOn: $video.bFrames) {
                     Text("B-frames")
@@ -67,7 +68,7 @@ private struct DeepLinkCreatorStreamAudioView: View {
     @ObservedObject var audio: DeepLinkCreatorStreamAudio
 
     private func calcBitrate() -> Int {
-        return Int((audio.bitrateFloat * 1000).rounded(.up))
+        Int((audio.bitrateFloat * 1000).rounded(.up))
     }
 
     var body: some View {
@@ -102,9 +103,9 @@ private struct DeepLinkCreatorStreamSrtView: View {
 
     private func changeLatency(value: String) -> String? {
         if Int32(value) != nil {
-            return nil
+            nil
         } else {
-            return String(localized: "Not a number")
+            String(localized: "Not a number")
         }
     }
 
@@ -149,7 +150,7 @@ private struct DeepLinkCreatorStreamObsView: View {
     @ObservedObject var obs: DeepLinkCreatorStreamObs
 
     private func changeWebSocketUrl(value: String) -> String? {
-        return isValidWebSocketUrl(url: cleanUrl(url: value))
+        isValidWebSocketUrl(url: cleanUrl(url: value))
     }
 
     private func submitWebSocketUrl(value: String) {
@@ -291,11 +292,7 @@ struct DeepLinkCreatorStreamSettingsView: View {
             }
             .navigationTitle("Stream")
         } label: {
-            HStack {
-                DraggableItemPrefixView()
-                Text(stream.name)
-                Spacer()
-            }
+            DraggableItemTextView(name: stream.name)
         }
     }
 }

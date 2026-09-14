@@ -43,6 +43,8 @@ private struct WidgetView: View {
             WidgetScoreboardQuickButtonControlsView(model: model,
                                                     widget: widget,
                                                     scoreboard: widget.scoreboard)
+        case .pomodoroTimer:
+            WidgetPomodoroTimerQuickButtonControlsView(pomodoroTimer: widget.pomodoroTimer)
         default:
             EmptyView()
         }
@@ -51,7 +53,6 @@ private struct WidgetView: View {
 
 struct QuickButtonSceneWidgetsView: View {
     @EnvironmentObject var model: Model
-    // periphery:ignore
     @ObservedObject var sceneSelector: SceneSelector
 
     var body: some View {

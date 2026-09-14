@@ -42,11 +42,11 @@ private struct StreamDescriptionView: View {
                 CacheAsyncImage(url: thumbnailUrl) { image in
                     image
                         .resizable()
-                        .aspectRatio(contentMode: .fit)
+                        .scaledToFit()
                 } placeholder: {
                     Image("AppIconNoBackground")
                         .resizable()
-                        .aspectRatio(contentMode: .fit)
+                        .scaledToFit()
                 }
                 .frame(width: 50, height: 50)
                 .clipShape(RoundedRectangle(cornerRadius: 5))
@@ -59,7 +59,7 @@ private struct StreamDescriptionView: View {
                 }
             }
             let ingestsUrl = url()
-            if stream.url != ingestsUrl || stream.youTubeVideoId != youTubeStream.id {
+            if stream.url != ingestsUrl || !stream.getYouTubeVideoIds().contains(youTubeStream.id) {
                 HStack {
                     Text("⚠️ Moblin is not configured to stream to this stream.")
                     Button {
@@ -80,11 +80,11 @@ private struct StreamDescriptionView: View {
                             return
                         }
                         stream.url = ingestsUrl
-                        stream.youTubeVideoId = youTubeStream.id
+                        stream.youTubeVideoIds = youTubeStream.id
                         model.reloadStreamIfEnabled(stream: stream)
                     }
                     Button("No") {
-                        stream.youTubeVideoId = youTubeStream.id
+                        stream.youTubeVideoIds = youTubeStream.id
                         model.youTubeVideoIdUpdated()
                     }
                 }
@@ -99,8 +99,10 @@ private struct YouTubeStreamView: View {
     let youTubeStream: YouTubeApiLiveBroadcast
     let ingests: [YouTubeApiLiveStream]
     let destroyImage: String
+    let destroyText: String
     let destroy: (String, YouTubeApi, @escaping () -> Void) -> Void
     @State private var destroying: Bool = false
+    @State private var presentingConfirm: Bool = false
 
     private func handleDestroy() {
         destroying = true
@@ -133,7 +135,7 @@ private struct YouTubeStreamView: View {
                         ProgressView()
                     } else {
                         Button {
-                            handleDestroy()
+                            presentingConfirm = true
                         } label: {
                             Image(systemName: destroyImage)
                                 .font(.title)
@@ -143,6 +145,11 @@ private struct YouTubeStreamView: View {
                     }
                 }
                 .frame(width: 50)
+                .confirmationDialog("", isPresented: $presentingConfirm) {
+                    Button(destroyText, role: .destructive) {
+                        handleDestroy()
+                    }
+                }
             }
             .padding(.trailing, 5)
         }
@@ -157,6 +164,7 @@ private struct StreamsView: View {
     @Binding var loadError: String?
     @Binding var ingests: [YouTubeApiLiveStream]
     let destroyImage: String
+    let destroyText: String
     let destroy: (String, YouTubeApi, @escaping () -> Void) -> Void
 
     var body: some View {
@@ -167,6 +175,7 @@ private struct StreamsView: View {
                                   youTubeStream: youTubeStream,
                                   ingests: ingests,
                                   destroyImage: destroyImage,
+                                  destroyText: destroyText,
                                   destroy: destroy)
             }
             if streams.isEmpty {
@@ -204,7 +213,7 @@ private struct ScheduleStreamView: View {
     }
 
     private func getLiveStream(liveStreams: YouTubeApiLiveStreamsListResponse) -> YouTubeApiLiveStream? {
-        return liveStreams.items.first {
+        liveStreams.items.first {
             let ingestionInfo = $0.cdn.ingestionInfo
             let url = "\(ingestionInfo.ingestionAddress)/\(ingestionInfo.streamName)"
             return url == stream.url
@@ -246,7 +255,7 @@ private struct ScheduleStreamView: View {
         case let .success(liveBroadcast):
             youTubeApi.bindLiveBroadcast(boardcastId: liveBroadcast.id, streamId: liveStream.id) {
                 if $0 {
-                    stream.youTubeVideoId = liveBroadcast.id
+                    stream.youTubeVideoIds = liveBroadcast.id
                     model.youTubeVideoIdUpdated()
                     scheduleStreamSucceeded()
                     loadStreams()
@@ -401,7 +410,7 @@ struct StreamYouTubeScheduleStreamView: View {
         TextButtonView("Manage streams") {
             presenting = true
         }
-        .disabled(stream.youTubeAuthState == nil)
+        .disabled(!stream.isYouTubeAuthorized())
         .sheet(isPresented: $presenting) {
             NavigationStack {
                 Form {
@@ -416,6 +425,7 @@ struct StreamYouTubeScheduleStreamView: View {
                                 loadError: $liveStreamsLoadError,
                                 ingests: $ingests,
                                 destroyImage: "stop",
+                                destroyText: String(localized: "End"),
                                 destroy: stopLiveStream)
                     StreamsView(model: model,
                                 stream: stream,
@@ -424,6 +434,7 @@ struct StreamYouTubeScheduleStreamView: View {
                                 loadError: $upcomingStreamsLoadError,
                                 ingests: $ingests,
                                 destroyImage: "trash",
+                                destroyText: String(localized: "Delete"),
                                 destroy: deleteUpcomingStream)
                 }
                 .navigationTitle("Manage streams")
@@ -445,8 +456,8 @@ struct StreamYouTubeSettingsView: View {
     @ObservedObject var debug: SettingsDebug
     @ObservedObject var stream: SettingsStream
 
-    private func submitVideoId(value: String) {
-        stream.youTubeVideoId = value
+    private func submitVideoIds(value: String) {
+        stream.youTubeVideoIds = value.removeAllWhitespaces()
         if stream.enabled {
             model.youTubeVideoIdUpdated()
         }
@@ -456,10 +467,40 @@ struct StreamYouTubeSettingsView: View {
         stream.youTubeHandle = value
     }
 
+    private func fetchChannelHandle() {
+        model.getYouTubeApi(stream: stream) { youTubeApi in
+            youTubeApi?.listChannels {
+                switch $0 {
+                case let .success(response):
+                    if let handle = response.items.first?.snippet.customUrl {
+                        stream.youTubeHandle = handle
+                    }
+                case .authError, .error:
+                    break
+                }
+            }
+        }
+    }
+
+    private func tokenExpiresIn() -> Duration? {
+        guard let expirationDate = stream.youTubeAuthState?.lastTokenResponse?.accessTokenExpirationDate
+        else {
+            return nil
+        }
+        return .seconds(max(Date().distance(to: expirationDate), 0))
+    }
+
+    private func showFailedToFetchVideoIdsToast() {
+        model.makeErrorToast(
+            title: String(localized: "Failed to fetch YouTube Video IDs"),
+            subTitle: String(localized: "You must be live on YouTube for this to work.")
+        )
+    }
+
     var body: some View {
         Form {
             Section {
-                if stream.youTubeAuthState == nil {
+                if !stream.isYouTubeAuthorized() {
                     TextButtonView("Login") {
                         model.youTubeSignIn(stream: stream)
                     }
@@ -482,28 +523,53 @@ struct StreamYouTubeSettingsView: View {
                     placeholder: "@erimo144"
                 )
                 TextEditNavigationView(
-                    title: String(localized: "Video id"),
-                    value: String(stream.youTubeVideoId),
-                    onSubmit: submitVideoId,
+                    title: String(localized: "Video IDs"),
+                    value: String(stream.youTubeVideoIds),
+                    onSubmit: submitVideoIds,
                     placeholder: "FekKCUN5W8U"
                 )
-                TextButtonView("Fetch Video ID") {
-                    Task { @MainActor in
-                        do {
-                            let videoId = try await fetchYouTubeVideoId(handle: stream.youTubeHandle)
-                            submitVideoId(value: videoId)
-                        } catch {
-                            model.makeErrorToast(
-                                title: String(localized: "Failed to fetch YouTube Video ID"),
-                                subTitle: String(localized: "You must be live on YouTube for this to work.")
-                            )
+                TextButtonView("Fetch Video IDs") {
+                    if stream.isYouTubeAuthorized() {
+                        model.getYouTubeApi(stream: stream) { youTubeApi in
+                            guard let youTubeApi else {
+                                showFailedToFetchVideoIdsToast()
+                                return
+                            }
+                            youTubeApi.listLiveBroadcasts(status: "active") { response in
+                                switch response {
+                                case let .success(listResponse):
+                                    let videoIds = listResponse.items.map(\.id)
+                                    guard !videoIds.isEmpty else {
+                                        showFailedToFetchVideoIdsToast()
+                                        return
+                                    }
+                                    submitVideoIds(value: videoIds.joined(separator: ","))
+                                default:
+                                    showFailedToFetchVideoIdsToast()
+                                }
+                            }
+                        }
+                    } else {
+                        Task { @MainActor in
+                            do {
+                                let videoId = try await fetchYouTubeVideoId(handle: stream.youTubeHandle)
+                                submitVideoIds(value: videoId)
+                            } catch {
+                                showFailedToFetchVideoIdsToast()
+                            }
                         }
                     }
                 }
+                .disabled(!stream.isYouTubeAuthorized() && stream.youTubeHandle.isEmpty)
             } footer: {
                 Text("The Video ID unique for every live stream.")
             }
         }
         .navigationTitle("YouTube")
+        .onChange(of: stream.youTubeAuthState) { authState in
+            if authState != nil {
+                fetchChannelHandle()
+            }
+        }
     }
 }

@@ -1,19 +1,22 @@
-import DockKit
 import Foundation
 import Spatial
+#if canImport(DockKit)
+import DockKit
 
 @available(iOS 18.0, *)
+@MainActor
 class Gimbal {
     private let model: Model
     private var task: Task<Void, Never>?
     private var accessoryTask: Task<Void, Never>?
     private var accessory: DockAccessory?
     private var shutterCount: Int = 0
+    private var tracking: Bool = true
     static var shared: Gimbal?
 
     init(model: Model) {
         self.model = model
-        task = Task { @MainActor [weak self] in
+        task = Task { [weak self] in
             do {
                 for await stateChange in try DockAccessoryManager.shared.accessoryStateChanges {
                     try self?.handleStateChange(stateChange: stateChange)
@@ -25,46 +28,67 @@ class Gimbal {
     }
 
     func isConnected() -> Bool {
-        return accessory != nil
+        accessory != nil
     }
 
-    func setOrientation(angles: Vector3D) {
-        Task { @MainActor [weak self] in
-            await self?.setOrientation(angles: angles)
+    func setTracking(on: Bool) {
+        Task { @MainActor in
+            try? await DockAccessoryManager.shared.setSystemTrackingEnabled(on)
+            tracking = on
         }
     }
 
     func setOrientation(angles: Vector3D) async {
+        guard !tracking else {
+            return
+        }
         _ = try? await accessory?.setOrientation(angles)
     }
 
-    func animate(motion: DockAccessory.Animation) {
+    func animate(motion: SettingsGimbalMotion) {
+        let motion: DockAccessory.Animation = switch motion {
+        case .kapow:
+            .kapow
+        case .yes:
+            .yes
+        case .no:
+            .no
+        case .wakeup:
+            .wakeup
+        }
         Task { @MainActor [weak self] in
-            _ = try await self?.accessory?.animate(motion: motion)
+            guard let self, !tracking else {
+                return
+            }
+            _ = try await accessory?.animate(motion: motion)
         }
     }
 
     func setMovement(velocity: Vector3D) {
         Task { @MainActor [weak self] in
-            _ = try await self?.accessory?.setAngularVelocity(velocity)
+            guard let self, !tracking else {
+                return
+            }
+            _ = try await accessory?.setAngularVelocity(velocity)
         }
     }
 
-    func cancelMovement() {
-        setMovement(velocity: .init(x: 0, y: 0, z: 0))
-    }
-
-    func getCurrentOrientation() async -> Vector3D? {
-        guard var iterator = try? accessory?.motionStates.makeAsyncIterator() else {
+    func getCurrentOrientation() async throws -> Vector3D? {
+        guard !tracking else {
             return nil
         }
-        return await iterator.next()?.angularPositions
+        var iterator = try accessory?.motionStates.makeAsyncIterator()
+        return await iterator?.next()?.angularPositions
     }
 
     private func handleStateChange(stateChange: DockAccessory.StateChange) throws {
+        logger.info("""
+        gimbal: State changed to \(stateChange.state) with tracking button \
+        \(stateChange.trackingButtonEnabled)
+        """)
         switch stateChange.state {
         case .docked:
-            if let accessory = stateChange.accessory {
+            if let accessory = stateChange.accessory, accessory != self.accessory {
                 startAccessoryEventsHandler(accessory: accessory)
             }
         case .undocked:
@@ -78,9 +102,8 @@ class Gimbal {
         stopAccessoryEventsHandler()
         self.accessory = accessory
         shutterCount = 0
-        accessoryTask = Task { @MainActor [weak self] in
+        accessoryTask = Task { [weak self] in
             do {
-                try await DockAccessoryManager.shared.setSystemTrackingEnabled(false)
                 for await event in try accessory.accessoryEvents {
                     self?.handleAccessoryEvent(event)
                 }
@@ -115,21 +138,17 @@ class Gimbal {
             return
         }
         let gimbal = model.database.gimbal
-        model.handleControllerFunction(function: gimbal.functionShutter,
-                                       sceneId: gimbal.shutterSceneId,
-                                       widgetId: gimbal.shutterWidgetId,
-                                       gimbalPresetId: nil,
-                                       gimbalMotion: gimbal.motion,
+        model.handleControllerFunction(buttonId: "g:shutter",
+                                       function: gimbal.functionShutter,
+                                       functionData: gimbal.functionDataShutter,
                                        pressed: false)
     }
 
     private func handleAccessoryEventCameraFlip() {
         let gimbal = model.database.gimbal
-        model.handleControllerFunction(function: gimbal.functionFlip,
-                                       sceneId: gimbal.flipSceneId,
-                                       widgetId: gimbal.flipWidgetId,
-                                       gimbalPresetId: nil,
-                                       gimbalMotion: gimbal.motion,
+        model.handleControllerFunction(buttonId: "g:flip",
+                                       function: gimbal.functionFlip,
+                                       functionData: gimbal.functionDataFlip,
                                        pressed: false)
     }
 
@@ -148,3 +167,29 @@ class Gimbal {
         }
     }
 }
+
+#else
+
+@MainActor
+class Gimbal {
+    static var shared: Gimbal?
+
+    init(model _: Model) {}
+
+    func isConnected() -> Bool {
+        false
+    }
+
+    func setTracking(on _: Bool) {}
+
+    func setOrientation(angles _: Vector3D) async {}
+
+    func animate(motion _: SettingsGimbalMotion) {}
+
+    func setMovement(velocity _: Vector3D) {}
+
+    func getCurrentOrientation() async throws -> Vector3D? {
+        nil
+    }
+}
+#endif

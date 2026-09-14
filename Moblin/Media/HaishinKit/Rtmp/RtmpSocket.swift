@@ -16,12 +16,11 @@ protocol RtmpSocketDelegate: AnyObject {
     func socketPost(data: AsObject)
 }
 
-final class RtmpSocket {
-    var maximumChunkSizeFromServer = RtmpChunk.defaultSize
+final class RtmpSocket: @unchecked Sendable {
     var maximumChunkSizeToServer = RtmpChunk.defaultSize
     private var readyState: RtmpSocketReadyState = .uninitialized
     private var inputBuffer = Data()
-    weak var delegate: RtmpSocketDelegate?
+    weak var delegate: (any RtmpSocketDelegate)?
     private var totalBytesSending: Int64 = 0
     private var totalBytesSent: Int64 = 0
     private let name: String
@@ -36,7 +35,6 @@ final class RtmpSocket {
     func connect(host: String, port: Int, tlsOptions: NWProtocolTLS.Options?) {
         setReadyState(state: .uninitialized)
         maximumChunkSizeToServer = RtmpChunk.defaultSize
-        maximumChunkSizeFromServer = RtmpChunk.defaultSize
         totalBytesSending = 0
         totalBytesSent = 0
         inputBuffer.removeAll(keepingCapacity: false)
@@ -62,11 +60,10 @@ final class RtmpSocket {
         let wasHandshakeDone = readyState == .handshakeDone
         setReadyState(state: .closed)
         if isDisconnected {
-            let data: AsObject
-            if wasHandshakeDone {
-                data = RtmpConnectionCode.connectClosed.eventData()
+            let data: AsObject = if wasHandshakeDone {
+                RtmpConnectionCode.connectClosed.eventData()
             } else {
-                data = RtmpConnectionCode.connectFailed.eventData()
+                RtmpConnectionCode.connectFailed.eventData()
             }
             delegate?.socketPost(data: data)
         }
@@ -76,7 +73,7 @@ final class RtmpSocket {
         for data in chunk.split(maximumSize: maximumChunkSizeToServer) {
             write(data: data)
         }
-        return chunk.message!.length
+        return chunk.message.length
     }
 
     private func setReadyState(state: RtmpSocketReadyState) {
@@ -111,7 +108,7 @@ final class RtmpSocket {
     }
 
     private func hasTooMuchDataBuffered() -> Bool {
-        return totalBytesSending - totalBytesSent > 100_000_000
+        totalBytesSending - totalBytesSent > 100_000_000
     }
 
     private func viabilityDidChange(to viability: Bool) {
@@ -143,9 +140,9 @@ final class RtmpSocket {
             guard let self, let data else {
                 return
             }
-            self.inputBuffer.append(data)
-            self.processInput()
-            self.receive(on: connection)
+            inputBuffer.append(data)
+            processInput()
+            receive(on: connection)
         }
     }
 

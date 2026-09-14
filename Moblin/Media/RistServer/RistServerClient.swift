@@ -6,10 +6,12 @@ class RistServerClient {
     private let reader: MpegTsReader
     private let virtualDestinationPort: UInt16
 
-    init(virtualDestinationPort: UInt16, latency: Double) {
+    init(virtualDestinationPort: UInt16, latency: Double, softwareDecoding: Bool) {
         self.virtualDestinationPort = virtualDestinationPort
-        reader = MpegTsReader(decoderQueue: ristServerQueue,
+        reader = MpegTsReader(name: "rist-server",
+                              decoderQueue: ristServerQueue,
                               timecodesEnabled: false,
+                              softwareDecoding: softwareDecoding,
                               targetLatency: latency)
         reader.delegate = self
     }

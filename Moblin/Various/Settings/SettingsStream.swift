@@ -5,7 +5,7 @@ enum SettingsStreamCodec: String, Codable, CaseIterable {
     case h265hevc = "H.265/HEVC"
     case h264avc = "H.264/AVC"
 
-    init(from decoder: Decoder) throws {
+    init(from decoder: any Decoder) throws {
         self = try SettingsStreamCodec(rawValue: decoder.singleValueContainer().decode(RawValue.self)) ??
             .h264avc
     }
@@ -13,9 +13,9 @@ enum SettingsStreamCodec: String, Codable, CaseIterable {
     func shortString() -> String {
         switch self {
         case .h265hevc:
-            return "H.265"
+            "H.265"
         case .h264avc:
-            return "H.264"
+            "H.264"
         }
     }
 }
@@ -34,11 +34,22 @@ enum SettingsStreamRateControl: String, Codable, CaseIterable {
     func toString() -> String {
         switch self {
         case .abr:
-            return String(localized: "ABR (Average)")
+            String(localized: "ABR (Average)")
         case .cbr:
-            return String(localized: "CBR (Constant)")
+            String(localized: "CBR (Constant)")
         case .vbr:
-            return String(localized: "VBR (Variable)")
+            String(localized: "VBR (Variable)")
+        }
+    }
+
+    func shortString() -> String {
+        switch self {
+        case .abr:
+            String(localized: "ABR")
+        case .cbr:
+            String(localized: "CBR")
+        case .vbr:
+            String(localized: "VBR")
         }
     }
 
@@ -55,13 +66,13 @@ enum SettingsStreamRateControl: String, Codable, CaseIterable {
 
     static func makeValid(value: SettingsStreamRateControl) -> SettingsStreamRateControl {
         if #available(iOS 26, *) {
-            return value
+            value
         } else {
             switch value {
             case .vbr:
-                return .abr
+                .abr
             default:
-                return value
+                value
             }
         }
     }
@@ -82,65 +93,64 @@ enum SettingsStreamResolution: String, Codable, CaseIterable {
     case r426x240 = "426x240"
 
     static func > (lhs: SettingsStreamResolution, rhs: SettingsStreamResolution) -> Bool {
-        return lhs.dimensions(portrait: false).width > rhs.dimensions(portrait: false).width
+        lhs.dimensions(portrait: false).width > rhs.dimensions(portrait: false).width
     }
 
     func shortString() -> String {
         switch self {
         case .r4032x3024:
-            return "3024p (4:3)"
+            "3024p (4:3)"
         case .r3840x2160:
-            return "4K"
+            "4K"
         case .r2560x1440:
-            return "1440p"
+            "1440p"
         case .r1920x1440:
-            return "1440p (4:3)"
+            "1440p (4:3)"
         case .r1920x1080:
-            return "1080p"
+            "1080p"
         case .r1664x936:
-            return "936p"
+            "936p"
         case .r1024x768:
-            return "768p (4:3)"
+            "768p (4:3)"
         case .r1280x720:
-            return "720p"
+            "720p"
         case .r960x540:
-            return "540p"
+            "540p"
         case .r854x480:
-            return "480p"
+            "480p"
         case .r640x360:
-            return "360p"
+            "360p"
         case .r426x240:
-            return "240p"
+            "240p"
         }
     }
 
     func dimensions(portrait: Bool) -> CMVideoDimensions {
-        var size: CMVideoDimensions
-        switch self {
+        var size: CMVideoDimensions = switch self {
         case .r4032x3024:
-            size = .init(width: 4032, height: 3024)
+            .init(width: 4032, height: 3024)
         case .r3840x2160:
-            size = .init(width: 3840, height: 2160)
+            .init(width: 3840, height: 2160)
         case .r2560x1440:
-            size = .init(width: 2560, height: 1440)
+            .init(width: 2560, height: 1440)
         case .r1920x1440:
-            size = .init(width: 1920, height: 1440)
+            .init(width: 1920, height: 1440)
         case .r1920x1080:
-            size = .init(width: 1920, height: 1080)
+            .init(width: 1920, height: 1080)
         case .r1664x936:
-            size = .init(width: 1664, height: 936)
+            .init(width: 1664, height: 936)
         case .r1024x768:
-            size = .init(width: 1024, height: 768)
+            .init(width: 1024, height: 768)
         case .r1280x720:
-            size = .init(width: 1280, height: 720)
+            .init(width: 1280, height: 720)
         case .r960x540:
-            size = .init(width: 960, height: 540)
+            .init(width: 960, height: 540)
         case .r854x480:
-            size = .init(width: 854, height: 480)
+            .init(width: 854, height: 480)
         case .r640x360:
-            size = .init(width: 640, height: 360)
+            .init(width: 640, height: 360)
         case .r426x240:
-            size = .init(width: 426, height: 240)
+            .init(width: 426, height: 240)
         }
         if portrait {
             size = .init(width: size.height, height: size.width)
@@ -158,9 +168,9 @@ enum SettingsStreamSrtImplementation: String, Codable, CaseIterable {
     func toString() -> String {
         switch self {
         case .moblin:
-            return String(localized: "Moblin")
+            String(localized: "Moblin")
         case .official:
-            return String(localized: "Official")
+            String(localized: "Official")
         }
     }
 }
@@ -172,18 +182,18 @@ enum SettingsStreamAudioCodec: String, Codable, CaseIterable {
     func toEncoder() -> AudioEncoderSettings.Format {
         switch self {
         case .aac:
-            return .aac
+            .aac
         case .opus:
-            return .opus
+            .opus
         }
     }
 
     func toString() -> String {
         switch self {
         case .aac:
-            return "AAC"
+            "AAC"
         case .opus:
-            return "Opus"
+            "Opus"
         }
     }
 }
@@ -193,8 +203,9 @@ enum SettingsStreamProtocol: String, Codable {
     case srt = "SRT"
     case rist = "RIST"
     case whip = "WHIP"
+    case mobcam = "Mobcam"
 
-    init(from decoder: Decoder) throws {
+    init(from decoder: any Decoder) throws {
         self = try SettingsStreamProtocol(rawValue: decoder.singleValueContainer().decode(RawValue.self)) ??
             .rtmp
     }
@@ -208,6 +219,7 @@ enum SettingsStreamDetailedProtocol {
     case rist
     case whip
     case whips
+    case mobcam
 }
 
 class SettingsStreamSrtConnectionPriority: Codable, Identifiable {
@@ -222,14 +234,14 @@ class SettingsStreamSrtConnectionPriority: Codable, Identifiable {
     }
 
     enum CodingKeys: CodingKey {
-        case id,
-             name,
-             priority,
-             enabled,
-             relayId
+        case id
+        case name
+        case priority
+        case enabled
+        case relayId
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.id, id)
         try container.encode(.name, name)
@@ -238,7 +250,7 @@ class SettingsStreamSrtConnectionPriority: Codable, Identifiable {
         try container.encode(.relayId, relayId)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = container.decode(.id, UUID.self, .init())
         name = container.decode(.name, String.self, "")
@@ -256,7 +268,7 @@ class SettingsStreamSrtConnectionPriority: Codable, Identifiable {
     }
 }
 
-class SettingsStreamSrtConnectionPriorities: Codable {
+class SettingsStreamSrtConnectionPriorities: Codable, @unchecked Sendable {
     var enabled: Bool = false
     var priorities: [SettingsStreamSrtConnectionPriority] = [
         SettingsStreamSrtConnectionPriority(name: "Cellular"),
@@ -280,7 +292,7 @@ enum SettingsStreamSrtAdaptiveBitrateAlgorithm: Codable, CaseIterable {
     case slowIrl
     case customIrl
 
-    init(from decoder: Decoder) throws {
+    init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if container.contains(CodingKeys.belabox) {
             self = .belabox
@@ -298,13 +310,13 @@ enum SettingsStreamSrtAdaptiveBitrateAlgorithm: Codable, CaseIterable {
     func toString() -> String {
         switch self {
         case .belabox:
-            return String(localized: "BELABOX")
+            String(localized: "BELABOX")
         case .fastIrl:
-            return String(localized: "Fast IRL")
+            String(localized: "Fast IRL")
         case .slowIrl:
-            return String(localized: "Slow IRL")
+            String(localized: "Slow IRL")
         case .customIrl:
-            return String(localized: "Custom IRL")
+            String(localized: "Custom IRL")
         }
     }
 }
@@ -316,17 +328,17 @@ class SettingsStreamSrtAdaptiveBitrateFastIrlSettings: Codable {
     init() {}
 
     enum CodingKeys: CodingKey {
-        case packetsInFlight,
-             minimumBitrate
+        case packetsInFlight
+        case minimumBitrate
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.packetsInFlight, packetsInFlight)
         try container.encode(.minimumBitrate, minimumBitrate)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         packetsInFlight = container.decode(.packetsInFlight, Int32.self, 200)
         minimumBitrate = container.decode(.minimumBitrate, Float.self, 250)
@@ -351,15 +363,15 @@ class SettingsStreamSrtAdaptiveBitrateCustomSettings: Codable {
     init() {}
 
     enum CodingKeys: CodingKey {
-        case packetsInFlight,
-             pifDiffIncreaseFactor,
-             rttDiffHighDecreaseFactor,
-             rttDiffHighAllowedSpike,
-             rttDiffHighMinimumDecrease,
-             minimumBitrate
+        case packetsInFlight
+        case pifDiffIncreaseFactor
+        case rttDiffHighDecreaseFactor
+        case rttDiffHighAllowedSpike
+        case rttDiffHighMinimumDecrease
+        case minimumBitrate
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.packetsInFlight, packetsInFlight)
         try container.encode(.pifDiffIncreaseFactor, pifDiffIncreaseFactor)
@@ -369,7 +381,7 @@ class SettingsStreamSrtAdaptiveBitrateCustomSettings: Codable {
         try container.encode(.minimumBitrate, minimumBitrate)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         packetsInFlight = container.decode(.packetsInFlight, Int32.self, 200)
         pifDiffIncreaseFactor = container.decode(.pifDiffIncreaseFactor, Float.self, 100)
@@ -400,12 +412,12 @@ class SettingsStreamSrtAdaptiveBitrateBelaboxSettings: Codable {
         case minimumBitrate
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.minimumBitrate, minimumBitrate)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         minimumBitrate = container.decode(.minimumBitrate, Float.self, 250)
     }
@@ -417,8 +429,8 @@ class SettingsStreamSrtAdaptiveBitrateBelaboxSettings: Codable {
     }
 }
 
-class SettingsStreamSrtAdaptiveBitrate: Codable {
-    var algorithm: SettingsStreamSrtAdaptiveBitrateAlgorithm = .belabox
+class SettingsStreamSrtAdaptiveBitrate: Codable, ObservableObject {
+    @Published var algorithm: SettingsStreamSrtAdaptiveBitrateAlgorithm = .belabox
     var fastIrlSettings: SettingsStreamSrtAdaptiveBitrateFastIrlSettings = .init()
     var customSettings: SettingsStreamSrtAdaptiveBitrateCustomSettings = .init()
     var belaboxSettings: SettingsStreamSrtAdaptiveBitrateBelaboxSettings = .init()
@@ -426,13 +438,13 @@ class SettingsStreamSrtAdaptiveBitrate: Codable {
     init() {}
 
     enum CodingKeys: CodingKey {
-        case algorithm,
-             fastIrlSettings,
-             customSettings,
-             belaboxSettings
+        case algorithm
+        case fastIrlSettings
+        case customSettings
+        case belaboxSettings
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.algorithm, algorithm)
         try container.encode(.fastIrlSettings, fastIrlSettings)
@@ -440,7 +452,7 @@ class SettingsStreamSrtAdaptiveBitrate: Codable {
         try container.encode(.belaboxSettings, belaboxSettings)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         algorithm = container.decode(.algorithm, SettingsStreamSrtAdaptiveBitrateAlgorithm.self, .belabox)
         fastIrlSettings = container.decode(
@@ -487,21 +499,21 @@ class SettingsStreamSrt: Codable, ObservableObject {
     init() {}
 
     enum CodingKeys: CodingKey {
-        case latency,
-             maximumBandwidthFollowInput,
-             overheadBandwidth,
-             adaptiveBitrateEnabled,
-             adaptiveBitrate,
-             connectionPriorities,
-             mpegtsPacketsPerPacket,
-             dnsLookupStrategy,
-             implementation,
-             bigPackets,
-             bigPacketsMigrated,
-             implemenationMigrated
+        case latency
+        case maximumBandwidthFollowInput
+        case overheadBandwidth
+        case adaptiveBitrateEnabled
+        case adaptiveBitrate
+        case connectionPriorities
+        case mpegtsPacketsPerPacket
+        case dnsLookupStrategy
+        case implementation
+        case bigPackets
+        case bigPacketsMigrated
+        case implemenationMigrated
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.latency, latency)
         try container.encode(.maximumBandwidthFollowInput, maximumBandwidthFollowInput)
@@ -517,7 +529,7 @@ class SettingsStreamSrt: Codable, ObservableObject {
         try container.encode(.implemenationMigrated, implemenationMigrated)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         latency = container.decode(.latency, Int32.self, defaultSrtLatency)
         maximumBandwidthFollowInput = container.decode(.maximumBandwidthFollowInput, Bool.self, true)
@@ -547,9 +559,9 @@ class SettingsStreamSrt: Codable, ObservableObject {
 
     func mpegtsPacketsPerPacket() -> Int {
         if bigPackets {
-            return 7
+            7
         } else {
-            return 6
+            6
         }
     }
 
@@ -604,9 +616,9 @@ enum SettingsStreamWhipHttpTransport: Codable, CaseIterable {
     func toString() -> String {
         switch self {
         case .standard:
-            return String(localized: "Standard")
+            String(localized: "Standard")
         case .remoteControl:
-            return String(localized: "Remote control")
+            String(localized: "Remote control")
         }
     }
 }
@@ -618,17 +630,17 @@ class SettingsStreamWhip: Codable, ObservableObject {
     init() {}
 
     enum CodingKeys: CodingKey {
-        case headers,
-             httpTransport
+        case headers
+        case httpTransport
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.headers, headers)
         try container.encode(.httpTransport, httpTransport)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         headers = container.decode(.headers, [SettingsHttpHeader].self, [])
         httpTransport = container.decode(.httpTransport, SettingsStreamWhipHttpTransport.self, .standard)
@@ -642,7 +654,7 @@ class SettingsStreamWhip: Codable, ObservableObject {
     }
 }
 
-class SettingsStreamChat: Codable {
+class SettingsStreamChat: Codable, @unchecked Sendable {
     var bttvEmotes: Bool = false
     var ffzEmotes: Bool = false
     var seventvEmotes: Bool = false
@@ -673,21 +685,21 @@ class SettingsStreamRecording: Codable, ObservableObject {
     init() {}
 
     enum CodingKeys: CodingKey {
-        case overrideStream,
-             resolution,
-             fps,
-             videoCodec,
-             videoBitrate,
-             maxKeyFrameInterval,
-             audioBitrate,
-             autoStartRecording,
-             autoStopRecording,
-             cleanRecordings,
-             cleanSnapshots,
-             recordingPath
+        case overrideStream
+        case resolution
+        case fps
+        case videoCodec
+        case videoBitrate
+        case maxKeyFrameInterval
+        case audioBitrate
+        case autoStartRecording
+        case autoStopRecording
+        case cleanRecordings
+        case cleanSnapshots
+        case recordingPath
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.overrideStream, overrideStream)
         try container.encode(.resolution, resolution)
@@ -703,7 +715,7 @@ class SettingsStreamRecording: Codable, ObservableObject {
         try container.encode(.recordingPath, recordingPath)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         overrideStream = container.decode(.overrideStream, Bool.self, false)
         resolution = container.decode(
@@ -739,30 +751,66 @@ class SettingsStreamRecording: Codable, ObservableObject {
 
     func videoBitrateString() -> String {
         if videoBitrate != 0 {
-            return formatBytesPerSecond(speed: Int64(videoBitrate))
+            formatBytesPerSecond(speed: Int64(videoBitrate))
         } else {
-            return String(localized: "Auto")
+            String(localized: "Auto")
         }
     }
 
     func maxKeyFrameIntervalString() -> String {
         if maxKeyFrameInterval != 0 {
-            return "\(maxKeyFrameInterval) s"
+            formatShortDuration(seconds: Int(maxKeyFrameInterval))
         } else {
-            return String(localized: "Auto")
+            String(localized: "Auto")
         }
     }
 
     func audioBitrateString() -> String {
         if audioBitrate != 0 {
-            return formatBytesPerSecond(speed: Int64(audioBitrate))
+            formatBytesPerSecond(speed: Int64(audioBitrate))
         } else {
-            return String(localized: "Auto")
+            String(localized: "Auto")
         }
     }
 
     func isDefaultRecordingPath() -> Bool {
-        return recordingPath == nil
+        recordingPath == nil
+    }
+}
+
+class SettingsStreamPreviewStream: Codable, ObservableObject {
+    @Published var url: String = ""
+    @Published var resolution: SettingsStreamResolution = .r640x360
+    @Published var bitrate: UInt32 = 500_000
+
+    init() {}
+
+    enum CodingKeys: CodingKey {
+        case url
+        case resolution
+        case bitrate
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(.url, url)
+        try container.encode(.resolution, resolution)
+        try container.encode(.bitrate, bitrate)
+    }
+
+    required init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = container.decode(.url, String.self, "")
+        resolution = container.decode(.resolution, SettingsStreamResolution.self, .r640x360)
+        bitrate = container.decode(.bitrate, UInt32.self, 500_000)
+    }
+
+    func clone() -> SettingsStreamPreviewStream {
+        let new = SettingsStreamPreviewStream()
+        new.url = url
+        new.resolution = resolution
+        new.bitrate = bitrate
+        return new
     }
 }
 
@@ -771,7 +819,7 @@ enum SettingsStreamReplayTransitionType: String, Codable, CaseIterable {
     case stingers
     case none
 
-    init(from decoder: Decoder) throws {
+    init(from decoder: any Decoder) throws {
         self = try SettingsStreamReplayTransitionType(rawValue: decoder.singleValueContainer()
             .decode(RawValue.self)) ??
             .fade
@@ -780,11 +828,11 @@ enum SettingsStreamReplayTransitionType: String, Codable, CaseIterable {
     func toString() -> String {
         switch self {
         case .fade:
-            return String(localized: "Fade")
+            String(localized: "Fade")
         case .stingers:
-            return String(localized: "Stingers")
+            String(localized: "Stingers")
         case .none:
-            return String(localized: "None")
+            String(localized: "None")
         }
     }
 }
@@ -808,31 +856,42 @@ class SettingsStreamReplay: Codable, ObservableObject {
     @Published var inStinger: SettingsStreamReplayStinger = .init()
     @Published var outStinger: SettingsStreamReplayStinger = .init()
     @Published var postTriggerDelay: Int = 3
+    @Published var layout: SettingsWidgetLayout = .init()
     var enterForegroundCountAtLatestUsage: Int?
 
     init() {}
 
     enum CodingKeys: CodingKey {
-        case enabled,
-             fade,
-             transitionType,
-             inStinger,
-             outStinger,
-             postTriggerDelay,
-             enterForegroundCountAtLatestUsage
+        case enabled
+        case fade
+        case transitionType
+        case inStinger
+        case outStinger
+        case postTriggerDelay
+        case x
+        case y
+        case size
+        case alignment
+        case positioningLock
+        case enterForegroundCountAtLatestUsage
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.enabled, enabled)
         try container.encode(.transitionType, transitionType)
         try container.encode(.inStinger, inStinger)
         try container.encode(.outStinger, outStinger)
         try container.encode(.postTriggerDelay, postTriggerDelay)
+        try container.encode(.x, layout.x)
+        try container.encode(.y, layout.y)
+        try container.encode(.size, layout.size)
+        try container.encode(.alignment, layout.alignment)
+        try container.encode(.positioningLock, layout.positioningLock)
         try container.encode(.enterForegroundCountAtLatestUsage, enterForegroundCountAtLatestUsage)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         enabled = container.decode(.enabled, Bool.self, false)
         if let fade = try? container.decode(Bool.self, forKey: .fade) {
@@ -847,6 +906,14 @@ class SettingsStreamReplay: Codable, ObservableObject {
         inStinger = container.decode(.inStinger, SettingsStreamReplayStinger.self, .init())
         outStinger = container.decode(.outStinger, SettingsStreamReplayStinger.self, .init())
         postTriggerDelay = container.decode(.postTriggerDelay, Int.self, 3)
+        layout.x = container.decode(.x, Double.self, 0.0)
+        layout.updateXString()
+        layout.y = container.decode(.y, Double.self, 0.0)
+        layout.updateYString()
+        layout.size = container.decode(.size, Double.self, 100.0)
+        layout.updateSizeString()
+        layout.alignment = container.decode(.alignment, SettingsAlignment.self, .topLeft)
+        layout.positioningLock = container.decode(.positioningLock, Bool.self, false)
         enterForegroundCountAtLatestUsage = container.decode(.enterForegroundCountAtLatestUsage,
                                                              Int?.self,
                                                              nil)
@@ -859,6 +926,7 @@ class SettingsStreamReplay: Codable, ObservableObject {
         new.inStinger = inStinger
         new.outStinger = outStinger
         new.postTriggerDelay = postTriggerDelay
+        new.layout = layout
         new.enterForegroundCountAtLatestUsage = enterForegroundCountAtLatestUsage
         return new
     }
@@ -872,6 +940,58 @@ class SettingsStreamTwitchReward: Codable, Identifiable {
     var alert: SettingsWidgetAlertsAlert = .init()
 }
 
+let maximumNumberOfTwitchRaidChannels = 10
+
+class SettingsStreamTwitchRaidChannel: Codable, Identifiable {
+    var id: String {
+        channelId
+    }
+
+    var channelId: String = ""
+    var channelName: String = ""
+    var timestamp: Date = .init()
+
+    init(channelId: String, channelName: String) {
+        self.channelId = channelId
+        self.channelName = channelName
+    }
+
+    enum CodingKeys: CodingKey {
+        case channelId
+        case channelName
+        case timestamp
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(.channelId, channelId)
+        try container.encode(.channelName, channelName)
+        try container.encode(.timestamp, timestamp)
+    }
+
+    required init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        channelId = container.decode(.channelId, String.self, "")
+        channelName = container.decode(.channelName, String.self, "")
+        timestamp = container.decode(.timestamp, Date.self, .init())
+    }
+
+    func clone() -> SettingsStreamTwitchRaidChannel {
+        let new = SettingsStreamTwitchRaidChannel(channelId: channelId, channelName: channelName)
+        new.timestamp = timestamp
+        return new
+    }
+}
+
+func appendTwitchRaidChannel(_ channels: [SettingsStreamTwitchRaidChannel],
+                             channelId: String,
+                             channelName: String) -> [SettingsStreamTwitchRaidChannel]
+{
+    var channels = channels.filter { $0.channelId != channelId }
+    channels.insert(.init(channelId: channelId, channelName: channelName), at: 0)
+    return Array(channels.prefix(maximumNumberOfTwitchRaidChannels))
+}
+
 class SettingsStreamMultiStreamingDestination: Codable, Identifiable, ObservableObject, Named {
     static let baseName = String(localized: "My destination")
     var id: UUID = .init()
@@ -882,19 +1002,19 @@ class SettingsStreamMultiStreamingDestination: Codable, Identifiable, Observable
     init() {}
 
     enum CodingKeys: CodingKey {
-        case name,
-             url,
-             enabled
+        case name
+        case url
+        case enabled
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.name, name)
         try container.encode(.url, url)
         try container.encode(.enabled, enabled)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         name = container.decode(.name, String.self, Self.baseName)
         url = container.decode(.url, String.self, defaultRtmpStreamUrl)
@@ -919,12 +1039,12 @@ class SettingsStreamMultiStreaming: Codable, ObservableObject {
         case destinations
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.destinations, destinations)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         destinations = container.decode(.destinations, [SettingsStreamMultiStreamingDestination].self, [])
     }
@@ -947,21 +1067,27 @@ class SettingsTwitchAlerts: Codable, ObservableObject {
     @Published var raids: Bool = true
     @Published var cheers: Bool = true
     @Published var minimumCheerBits: Int = 0
+    @Published var watchStreaks: Bool = true
+    @Published var minimumWatchStreak: Int = 5
+    @Published var sharedChat: Bool = false
 
     init() {}
 
     enum CodingKeys: CodingKey {
-        case follows,
-             subscriptions,
-             giftSubscriptions,
-             resubscriptions,
-             rewards,
-             raids,
-             cheers,
-             minimumCheerBits
+        case follows
+        case subscriptions
+        case giftSubscriptions
+        case resubscriptions
+        case rewards
+        case raids
+        case cheers
+        case minimumCheerBits
+        case watchStreaks
+        case minimumWatchStreak
+        case sharedChat
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.follows, follows)
         try container.encode(.subscriptions, subscriptions)
@@ -971,9 +1097,12 @@ class SettingsTwitchAlerts: Codable, ObservableObject {
         try container.encode(.raids, raids)
         try container.encode(.cheers, cheers)
         try container.encode(.minimumCheerBits, minimumCheerBits)
+        try container.encode(.watchStreaks, watchStreaks)
+        try container.encode(.minimumWatchStreak, minimumWatchStreak)
+        try container.encode(.sharedChat, sharedChat)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         follows = container.decode(.follows, Bool.self, true)
         subscriptions = container.decode(.subscriptions, Bool.self, true)
@@ -983,6 +1112,9 @@ class SettingsTwitchAlerts: Codable, ObservableObject {
         raids = container.decode(.raids, Bool.self, true)
         cheers = container.decode(.cheers, Bool.self, true)
         minimumCheerBits = container.decode(.minimumCheerBits, Int.self, 0)
+        watchStreaks = container.decode(.watchStreaks, Bool.self, true)
+        minimumWatchStreak = container.decode(.minimumWatchStreak, Int.self, 5)
+        sharedChat = container.decode(.sharedChat, Bool.self, false)
     }
 
     func clone() -> SettingsTwitchAlerts {
@@ -995,11 +1127,18 @@ class SettingsTwitchAlerts: Codable, ObservableObject {
         new.raids = raids
         new.cheers = cheers
         new.minimumCheerBits = minimumCheerBits
+        new.watchStreaks = watchStreaks
+        new.minimumWatchStreak = minimumWatchStreak
+        new.sharedChat = sharedChat
         return new
     }
 
     func isBitsEnabled(amount: Int) -> Bool {
-        return cheers && amount >= minimumCheerBits
+        cheers && amount >= minimumCheerBits
+    }
+
+    func isWatchStreakEnabled(count: Int) -> Bool {
+        watchStreaks && count >= minimumWatchStreak
     }
 }
 
@@ -1015,16 +1154,16 @@ class SettingsKickAlerts: Codable, ObservableObject {
     init() {}
 
     enum CodingKeys: CodingKey {
-        case subscriptions,
-             giftedSubscriptions,
-             rewards,
-             hosts,
-             bans,
-             kicks,
-             minimumKicks
+        case subscriptions
+        case giftedSubscriptions
+        case rewards
+        case hosts
+        case bans
+        case kicks
+        case minimumKicks
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.subscriptions, subscriptions)
         try container.encode(.giftedSubscriptions, giftedSubscriptions)
@@ -1035,7 +1174,7 @@ class SettingsKickAlerts: Codable, ObservableObject {
         try container.encode(.minimumKicks, minimumKicks)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         subscriptions = container.decode(.subscriptions, Bool.self, true)
         giftedSubscriptions = container.decode(.giftedSubscriptions, Bool.self, true)
@@ -1059,11 +1198,11 @@ class SettingsKickAlerts: Codable, ObservableObject {
     }
 
     func isKicksEnabled(amount: Int) -> Bool {
-        return kicks && amount >= minimumKicks
+        kicks && amount >= minimumKicks
     }
 }
 
-class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named {
+class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named, @unchecked Sendable {
     static let defaultRealtimeIrlBaseUrl = "https://rtirl.com/api"
     static let defaultResolution: SettingsStreamResolution = .r1920x1080
     static let defaultFps: Int = 30
@@ -1078,7 +1217,11 @@ class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named 
     var twitchToastAlerts: SettingsTwitchAlerts = .init()
     var twitchAccessToken: String = ""
     var twitchLoggedIn: Bool = false
+    var twitchWantsToBeLoggedIn: Bool = false
+    var twitchNotLoggedInCount: Int = 0
     var twitchRewards: [SettingsStreamTwitchReward] = []
+    @Published var twitchRaidsSent: [SettingsStreamTwitchRaidChannel] = []
+    @Published var twitchRaidsReceived: [SettingsStreamTwitchRaidChannel] = []
     @Published var twitchSendMessagesTo: Bool = true
     @Published var kickChannelName: String = ""
     @Published var kickChannelId: String?
@@ -1086,11 +1229,15 @@ class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named 
     @Published var kickSlug: String?
     var kickAccessToken: String = ""
     @Published var kickLoggedIn: Bool = false
+    var kickWantsToBeLoggedIn: Bool = false
+    var kickNotLoggedInCount: Int = 0
     @Published var kickSendMessagesTo: Bool = true
     var kickChatAlerts: SettingsKickAlerts = .init()
     var kickToastAlerts: SettingsKickAlerts = .init()
     @Published var youTubeAuthState: OIDAuthState?
-    @Published var youTubeVideoId: String = ""
+    var youTubeWantsToBeLoggedIn: Bool = false
+    var youTubeNotLoggedInCount: Int = 0
+    @Published var youTubeVideoIds: String = ""
     @Published var youTubeHandle: String = ""
     @Published var youTubeScheduleStreamTitle: String = ""
     @Published var youTubeScheduleStreamVisibility: YouTubeApiLiveBroadcaseVisibility = .public
@@ -1146,7 +1293,10 @@ class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named 
     var replay: SettingsStreamReplay = .init()
     @Published var goLiveNotificationDiscordMessage: String = ""
     @Published var goLiveNotificationDiscordWebhookUrl: String = ""
+    @Published var goLiveNotificationMoblinWebsite: Bool = false
     @Published var multiStreaming: SettingsStreamMultiStreaming = .init()
+    var previewStream: SettingsStreamPreviewStream = .init()
+    @Published var autoGoLive: Bool = false
 
     static func == (lhs: SettingsStream, rhs: SettingsStream) -> Bool {
         lhs.id == rhs.id
@@ -1157,90 +1307,101 @@ class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named 
     }
 
     enum CodingKeys: CodingKey {
-        case name,
-             id,
-             enabled,
-             url,
-             twitchChannelName,
-             twitchChannelId,
-             twitchShowFollows,
-             twitchChatAlerts,
-             twitchToastAlerts,
-             twitchAccessToken,
-             twitchLoggedIn,
-             twitchRewards,
-             twitchSendMessagesTo,
-             kickChannelName,
-             kickChannelId,
-             kickChatroomChannelId,
-             kickSlug,
-             kickAccessToken,
-             kickLoggedIn,
-             kickSendMessagesTo,
-             kickChatAlerts,
-             kickToastAlerts,
-             youTubeVideoId,
-             youTubeHandle,
-             youTubeScheduleStreamTitle,
-             youTubeScheduleStreamVisibility,
-             youTubeScheduleStreamAutoStop,
-             afreecaTvChannelName,
-             afreecaTvStreamId,
-             openStreamingPlatformUrl,
-             openStreamingPlatformChannelId,
-             obsWebSocketEnabled,
-             obsWebSocketUrl,
-             obsWebSocketPassword,
-             obsSourceName,
-             obsMainScene,
-             obsBrbScene,
-             obsBrbSceneVideoSourceBroken,
-             obsAutoStartStream,
-             obsAutoStopStream,
-             obsAutoStartRecording,
-             obsAutoStopRecording,
-             streamingDirectlyToObs,
-             discordSnapshotWebhook,
-             discordChatBotSnapshotWebhook,
-             discordSnapshotWebhookOnlyWhenLive,
-             resolution,
-             fps,
-             autoFps,
-             bitrate,
-             bitrateRateControl,
-             codec,
-             h264Profile,
-             bFrames,
-             adaptiveEncoderResolution,
-             adaptiveEncoderResolutionThreashold,
-             adaptiveBitrate,
-             srt,
-             rtmp,
-             rist,
-             whip,
-             captureSessionPresetEnabled,
-             captureSessionPreset,
-             maxKeyFrameInterval,
-             audioCodec,
-             audioBitrate,
-             chat,
-             recording,
-             realtimeIrlEnabled,
-             realtimeIrlBaseUrl,
-             realtimeIrlPushKey,
-             portrait,
-             backgroundStreaming,
-             backgroundStreamingPiP,
-             estimatedViewerDelay,
-             ntpPoolAddress,
-             timecodesEnabled,
-             replay,
-             goLiveNotificationDiscordMessage,
-             goLiveNotificationDiscordWebhookUrl,
-             multiStreaming
+        case name
+        case id
+        case enabled
+        case url
+        case twitchChannelName
+        case twitchChannelId
+        case twitchShowFollows
+        case twitchChatAlerts
+        case twitchToastAlerts
+        case twitchAccessToken
+        case twitchLoggedIn
+        case twitchWantsToBeLoggedIn
+        case twitchNotLoggedInCount
+        case twitchRewards
+        case twitchRaidsSent
+        case twitchRaidsReceived
+        case twitchSendMessagesTo
+        case kickChannelName
+        case kickChannelId
+        case kickChatroomChannelId
+        case kickSlug
+        case kickAccessToken
+        case kickLoggedIn
+        case kickWantsToBeLoggedIn
+        case kickNotLoggedInCount
+        case kickSendMessagesTo
+        case kickChatAlerts
+        case kickToastAlerts
+        case youTubeVideoId
+        case youTubeWantsToBeLoggedIn
+        case youTubeNotLoggedInCount
+        case youTubeHandle
+        case youTubeScheduleStreamTitle
+        case youTubeScheduleStreamVisibility
+        case youTubeScheduleStreamAutoStop
+        case afreecaTvChannelName
+        case afreecaTvStreamId
+        case openStreamingPlatformUrl
+        case openStreamingPlatformChannelId
+        case obsWebSocketEnabled
+        case obsWebSocketUrl
+        case obsWebSocketPassword
+        case obsSourceName
+        case obsMainScene
+        case obsBrbScene
+        case obsBrbSceneVideoSourceBroken
+        case obsAutoStartStream
+        case obsAutoStopStream
+        case obsAutoStartRecording
+        case obsAutoStopRecording
+        case streamingDirectlyToObs
+        case discordSnapshotWebhook
+        case discordChatBotSnapshotWebhook
+        case discordSnapshotWebhookOnlyWhenLive
+        case resolution
+        case fps
+        case autoFps
+        case bitrate
+        case bitrateRateControl
+        case codec
+        case h264Profile
+        case bFrames
+        case adaptiveEncoderResolution
+        case adaptiveEncoderResolutionThreashold
+        case adaptiveBitrate
+        case srt
+        case rtmp
+        case rist
+        case whip
+        case captureSessionPresetEnabled
+        case captureSessionPreset
+        case maxKeyFrameInterval
+        case audioCodec
+        case audioBitrate
+        case chat
+        case recording
+        case realtimeIrlEnabled
+        case realtimeIrlBaseUrl
+        case realtimeIrlPushKey
+        case portrait
+        case backgroundStreaming
+        case backgroundStreamingPiP
+        case estimatedViewerDelay
+        case ntpPoolAddress
+        case timecodesEnabled
+        case replay
+        case goLiveNotificationDiscordMessage
+        case goLiveNotificationDiscordWebhookUrl
+        case goLiveNotificationMoblinWebsite
+        case multiStreaming
+        case previewStream
+        case autoGoLive
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.name, name)
         try container.encode(.id, id)
@@ -1251,7 +1412,11 @@ class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named 
         try container.encode(.twitchShowFollows, twitchShowFollows)
         try container.encode(.twitchAccessToken, twitchAccessToken)
         try container.encode(.twitchLoggedIn, twitchLoggedIn)
+        try container.encode(.twitchWantsToBeLoggedIn, twitchWantsToBeLoggedIn)
+        try container.encode(.twitchNotLoggedInCount, twitchNotLoggedInCount)
         try container.encode(.twitchRewards, twitchRewards)
+        try container.encode(.twitchRaidsSent, twitchRaidsSent)
+        try container.encode(.twitchRaidsReceived, twitchRaidsReceived)
         try container.encode(.twitchSendMessagesTo, twitchSendMessagesTo)
         try container.encode(.twitchChatAlerts, twitchChatAlerts)
         try container.encode(.twitchToastAlerts, twitchToastAlerts)
@@ -1261,13 +1426,17 @@ class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named 
         try container.encode(.kickSlug, kickSlug)
         try container.encode(.kickAccessToken, kickAccessToken)
         try container.encode(.kickLoggedIn, kickLoggedIn)
+        try container.encode(.kickWantsToBeLoggedIn, kickWantsToBeLoggedIn)
+        try container.encode(.kickNotLoggedInCount, kickNotLoggedInCount)
         try container.encode(.kickSendMessagesTo, kickSendMessagesTo)
         try container.encode(.kickChatAlerts, kickChatAlerts)
         try container.encode(.kickToastAlerts, kickToastAlerts)
         if let encoded = encodeYouTubeAuthState() {
             storeYouTubeAuthStateInKeychain(streamId: id, authState: encoded.base64EncodedString())
         }
-        try container.encode(.youTubeVideoId, youTubeVideoId)
+        try container.encode(.youTubeVideoId, youTubeVideoIds)
+        try container.encode(.youTubeWantsToBeLoggedIn, youTubeWantsToBeLoggedIn)
+        try container.encode(.youTubeNotLoggedInCount, youTubeNotLoggedInCount)
         try container.encode(.youTubeHandle, youTubeHandle)
         try container.encode(.youTubeScheduleStreamTitle, youTubeScheduleStreamTitle)
         try container.encode(.youTubeScheduleStreamVisibility, youTubeScheduleStreamVisibility)
@@ -1323,10 +1492,13 @@ class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named 
         try container.encode(.replay, replay)
         try container.encode(.goLiveNotificationDiscordMessage, goLiveNotificationDiscordMessage)
         try container.encode(.goLiveNotificationDiscordWebhookUrl, goLiveNotificationDiscordWebhookUrl)
+        try container.encode(.goLiveNotificationMoblinWebsite, goLiveNotificationMoblinWebsite)
         try container.encode(.multiStreaming, multiStreaming)
+        try container.encode(.previewStream, previewStream)
+        try container.encode(.autoGoLive, autoGoLive)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         name = container.decode(.name, String.self, "My stream")
         id = container.decode(.id, UUID.self, .init())
@@ -1337,7 +1509,13 @@ class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named 
         twitchShowFollows = container.decode(.twitchShowFollows, Bool?.self, nil)
         twitchAccessToken = container.decode(.twitchAccessToken, String.self, "")
         twitchLoggedIn = container.decode(.twitchLoggedIn, Bool.self, false)
+        twitchWantsToBeLoggedIn = container.decode(.twitchWantsToBeLoggedIn, Bool.self, twitchLoggedIn)
+        twitchNotLoggedInCount = container.decode(.twitchNotLoggedInCount, Int.self, 0)
         twitchRewards = container.decode(.twitchRewards, [SettingsStreamTwitchReward].self, [])
+        twitchRaidsSent = container.decode(.twitchRaidsSent, [SettingsStreamTwitchRaidChannel].self, [])
+        twitchRaidsReceived = container.decode(.twitchRaidsReceived,
+                                               [SettingsStreamTwitchRaidChannel].self,
+                                               [])
         twitchSendMessagesTo = container.decode(.twitchSendMessagesTo, Bool.self, true)
         twitchChatAlerts = container.decode(.twitchChatAlerts, SettingsTwitchAlerts.self, .init())
         twitchToastAlerts = container.decode(.twitchToastAlerts, SettingsTwitchAlerts.self, .init())
@@ -1352,13 +1530,19 @@ class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named 
         kickSlug = container.decode(.kickSlug, String?.self, nil)
         kickAccessToken = container.decode(.kickAccessToken, String.self, "")
         kickLoggedIn = container.decode(.kickLoggedIn, Bool.self, false)
+        kickWantsToBeLoggedIn = container.decode(.kickWantsToBeLoggedIn, Bool.self, kickLoggedIn)
+        kickNotLoggedInCount = container.decode(.kickNotLoggedInCount, Int.self, 0)
         kickSendMessagesTo = container.decode(.kickSendMessagesTo, Bool.self, true)
         kickChatAlerts = container.decode(.kickChatAlerts, SettingsKickAlerts.self, .init())
         kickToastAlerts = container.decode(.kickToastAlerts, SettingsKickAlerts.self, .init())
         if let encoded = loadYouTubeAuthStateFromKeychain(streamId: id) {
             youTubeAuthState = decodeYouTubeAuthState(encoded: Data(base64Encoded: encoded))
         }
-        youTubeVideoId = container.decode(.youTubeVideoId, String.self, "")
+        youTubeVideoIds = container.decode(.youTubeVideoId, String.self, "")
+        youTubeWantsToBeLoggedIn = container.decode(.youTubeWantsToBeLoggedIn,
+                                                    Bool.self,
+                                                    youTubeAuthState != nil)
+        youTubeNotLoggedInCount = container.decode(.youTubeNotLoggedInCount, Int.self, 0)
         youTubeHandle = container.decode(.youTubeHandle, String.self, "")
         youTubeScheduleStreamTitle = container.decode(.youTubeScheduleStreamTitle, String.self, "")
         youTubeScheduleStreamVisibility = container.decode(.youTubeScheduleStreamVisibility,
@@ -1436,7 +1620,14 @@ class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named 
             String.self,
             ""
         )
+        goLiveNotificationMoblinWebsite = container.decode(.goLiveNotificationMoblinWebsite, Bool.self, false)
         multiStreaming = container.decode(.multiStreaming, SettingsStreamMultiStreaming.self, .init())
+        previewStream = container.decode(.previewStream, SettingsStreamPreviewStream.self, .init())
+        autoGoLive = container.decode(.autoGoLive, Bool.self, false)
+    }
+
+    func getYouTubeVideoIds() -> [String] {
+        youTubeVideoIds.split(separator: ",").map { String($0) }
     }
 
     func clone() -> SettingsStream {
@@ -1446,20 +1637,33 @@ class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named 
         new.twitchChannelId = twitchChannelId
         new.twitchShowFollows = twitchShowFollows
         new.twitchRewards = twitchRewards
+        new.twitchRaidsSent = twitchRaidsSent.map { $0.clone() }
+        new.twitchRaidsReceived = twitchRaidsReceived.map { $0.clone() }
         new.twitchSendMessagesTo = twitchSendMessagesTo
         new.twitchChatAlerts = twitchChatAlerts.clone()
         new.twitchToastAlerts = twitchToastAlerts.clone()
+        new.twitchAccessToken = twitchAccessToken
+        new.twitchLoggedIn = twitchLoggedIn
+        new.twitchWantsToBeLoggedIn = twitchWantsToBeLoggedIn
+        new.twitchNotLoggedInCount = twitchNotLoggedInCount
+        if twitchLoggedIn {
+            storeTwitchAccessTokenInKeychain(streamId: new.id, accessToken: twitchAccessToken)
+        }
         new.kickChannelName = kickChannelName
         new.kickChannelId = kickChannelId
         new.kickChatroomChannelId = kickChatroomChannelId
         new.kickSlug = kickSlug
         new.kickAccessToken = kickAccessToken
         new.kickLoggedIn = kickLoggedIn
+        new.kickWantsToBeLoggedIn = kickWantsToBeLoggedIn
+        new.kickNotLoggedInCount = kickNotLoggedInCount
         new.kickSendMessagesTo = kickSendMessagesTo
         new.kickChatAlerts = kickChatAlerts.clone()
         new.kickToastAlerts = kickToastAlerts.clone()
         new.youTubeAuthState = youTubeAuthState
-        new.youTubeVideoId = youTubeVideoId
+        new.youTubeWantsToBeLoggedIn = youTubeWantsToBeLoggedIn
+        new.youTubeNotLoggedInCount = youTubeNotLoggedInCount
+        new.youTubeVideoIds = youTubeVideoIds
         new.youTubeHandle = youTubeHandle
         new.soopChannelName = soopChannelName
         new.soopStreamId = soopStreamId
@@ -1510,136 +1714,158 @@ class SettingsStream: Codable, Identifiable, Equatable, ObservableObject, Named 
         new.replay = replay.clone()
         new.goLiveNotificationDiscordMessage = goLiveNotificationDiscordMessage
         new.goLiveNotificationDiscordWebhookUrl = goLiveNotificationDiscordWebhookUrl
+        new.goLiveNotificationMoblinWebsite = goLiveNotificationMoblinWebsite
         new.multiStreaming = multiStreaming.clone()
+        new.previewStream = previewStream.clone()
+        new.autoGoLive = autoGoLive
         return new
     }
 
     func getScheme() -> String? {
-        return URL(string: url)?.scheme
+        URL(string: url)?.scheme
     }
 
     func getProtocol() -> SettingsStreamProtocol {
         switch getScheme() {
         case "rtmp":
-            return .rtmp
+            .rtmp
         case "rtmps":
-            return .rtmp
+            .rtmp
         case "srt":
-            return .srt
+            .srt
         case "srtla":
-            return .srt
+            .srt
         case "rist":
-            return .rist
+            .rist
         case "whip":
-            return .whip
+            .whip
         case "whips":
-            return .whip
+            .whip
+        case "mobcam":
+            .mobcam
         default:
-            return .rtmp
+            .rtmp
         }
     }
 
     func getDetailedProtocol() -> SettingsStreamDetailedProtocol {
         switch getScheme() {
         case "rtmp":
-            return .rtmp
+            .rtmp
         case "rtmps":
-            return .rtmps
+            .rtmps
         case "srt":
-            return .srt
+            .srt
         case "srtla":
-            return .srtla
+            .srtla
         case "rist":
-            return .rist
+            .rist
         case "whip":
-            return .whip
+            .whip
         case "whips":
-            return .whips
+            .whips
+        case "mobcam":
+            .mobcam
         default:
-            return .rtmp
+            .rtmp
         }
     }
 
     func protocolString() -> String {
-        if getProtocol() == .srt && isSrtla() {
-            return "SRTLA"
-        } else if getProtocol() == .rtmp && isRtmps() {
-            return "RTMPS"
+        if getProtocol() == .srt, isSrtla() {
+            "SRTLA"
+        } else if getProtocol() == .rtmp, isRtmps() {
+            "RTMPS"
         } else {
-            return getProtocol().rawValue
+            getProtocol().rawValue
         }
     }
 
     func isRtmps() -> Bool {
-        return getScheme() == "rtmps"
+        getScheme() == "rtmps"
     }
 
     func isSrtla() -> Bool {
-        return getScheme() == "srtla"
+        getScheme() == "srtla"
+    }
+
+    func mobcamPort() -> UInt16 {
+        guard let port = URL(string: url)?.port else {
+            return DefaultTcpPorts.mobcamStream
+        }
+        return UInt16(exactly: port) ?? DefaultTcpPorts.mobcamStream
     }
 
     func isBonding() -> Bool {
         if isSrtla() {
             return true
         }
-        if getProtocol() == .rist && rist.bonding {
+        if getProtocol() == .rist, rist.bonding {
             return true
         }
         return false
     }
 
     func resolutionString() -> String {
-        return resolution.shortString()
+        resolution.shortString()
     }
 
     func dimensions() -> CMVideoDimensions {
-        return resolution.dimensions(portrait: portrait)
+        resolution.dimensions(portrait: portrait)
     }
 
     func codecString() -> String {
-        return codec.shortString()
+        codec.shortString()
+    }
+
+    func rateControlString() -> String {
+        rateControl.shortString()
     }
 
     func bitrateString() -> String {
         var bitrate = formatBytesPerSecond(speed: Int64(bitrate))
-        if getProtocol() == .srt && srt.adaptiveBitrateEnabled {
+        if getProtocol() == .srt, srt.adaptiveBitrateEnabled {
             bitrate = "<\(bitrate)"
-        } else if getProtocol() == .rtmp && rtmp.adaptiveBitrateEnabled {
+        } else if getProtocol() == .rtmp, rtmp.adaptiveBitrateEnabled {
             bitrate = "<\(bitrate)"
         }
         return bitrate
     }
 
     func audioBitrateString() -> String {
-        return formatBytesPerSecond(speed: Int64(audioBitrate))
+        formatBytesPerSecond(speed: Int64(audioBitrate))
     }
 
     func audioCodecString() -> String {
-        return audioCodec.toString()
+        audioCodec.toString()
     }
 
     func maxKeyFrameIntervalString() -> String {
         if maxKeyFrameInterval != 0 {
-            return "\(maxKeyFrameInterval) s"
+            formatShortDuration(seconds: Int(maxKeyFrameInterval))
         } else {
-            return String(localized: "Auto")
+            String(localized: "Auto")
         }
+    }
+
+    func isYouTubeAuthorized() -> Bool {
+        youTubeAuthState?.isAuthorized == true
     }
 
     private func encodeYouTubeAuthState() -> Data? {
         if let youTubeAuthState {
-            return try? NSKeyedArchiver.archivedData(withRootObject: youTubeAuthState,
-                                                     requiringSecureCoding: false)
+            try? NSKeyedArchiver.archivedData(withRootObject: youTubeAuthState,
+                                              requiringSecureCoding: false)
         } else {
-            return nil
+            nil
         }
     }
 
     private func decodeYouTubeAuthState(encoded: Data?) -> OIDAuthState? {
         if let encoded {
-            return try? NSKeyedUnarchiver.unarchivedObject(ofClass: OIDAuthState.self, from: encoded)
+            try? NSKeyedUnarchiver.unarchivedObject(ofClass: OIDAuthState.self, from: encoded)
         } else {
-            return nil
+            nil
         }
     }
 }

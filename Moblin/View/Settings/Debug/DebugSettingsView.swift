@@ -50,6 +50,9 @@ struct DebugSettingsView: View {
                         }
                 }
             }
+            FilesLocationView(model: model,
+                              text: Text("Logs directory"),
+                              path: model.logsStorage.storageDirectory())
             Section {
                 Toggle("Debug logging", isOn: $debug.debugLogging)
                     .onChange(of: debug.debugLogging) { _ in
@@ -111,6 +114,12 @@ struct DebugSettingsView: View {
                     }
                 }
                 Toggle(String("Enhanced Moblin SRT"), isOn: $debug.enhancedMoblinSrt)
+                NavigationLink {
+                    HttpProxySettingsView(status: model.statusOther, httpProxy: model.database.httpProxy)
+                } label: {
+                    Text("HTTP proxy")
+                }
+                Toggle("SRT(LA) packet padding", isOn: $debug.packetPadding)
             } header: {
                 Text("Experimental")
             }

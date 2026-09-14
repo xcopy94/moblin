@@ -1,4 +1,13 @@
 import CoreImage
+import MetalPetal
+
+private func shapeBorderWidthPixels(_ borderWidth: Double, _ size: CGSize) -> Double {
+    0.025 * borderWidth * min(size.height, size.width)
+}
+
+private func shapeCornerRadiusPixels(_ cornerRadius: Float, _ size: CGSize) -> Float {
+    Float(min(size.height, size.width)) / 2 * cornerRadius
+}
 
 struct ShapeEffectSettings {
     var cornerRadius: Float = 0
@@ -11,15 +20,79 @@ struct ShapeEffectSettings {
     var cropHeight: Double = 1.0
 
     func borderWidthAndScale(_ image: CGRect) -> (Double, Double, Double) {
-        let borderWidth = 0.025 * borderWidth * min(image.height, image.width)
+        let borderWidth = shapeBorderWidthPixels(borderWidth, image.size)
         let scaleX = (image.width + 2 * borderWidth) / image.width
         let scaleY = (image.height + 2 * borderWidth) / image.height
         return (borderWidth, scaleX, scaleY)
     }
 }
 
-final class ShapeEffect: VideoEffect {
+struct MetalPetalWidgetShape {
+    var contentRegion: CGRect
+    var cornerRadius: Float = 0
+    var borderWidth: Double = 0
+    var borderColor: MTIColor = .black
+    var rotation: Double = 0
+
+    func borderWidthPixels(_ size: CGSize) -> Double {
+        shapeBorderWidthPixels(borderWidth, size)
+    }
+
+    func cornerRadius(_ size: CGSize) -> MTICornerRadius {
+        MTICornerRadius(shapeCornerRadiusPixels(cornerRadius, size))
+    }
+
+    func rotated(_ size: CGSize) -> CGSize {
+        if isQuarterTurn() {
+            CGSize(width: size.height, height: size.width)
+        } else {
+            size
+        }
+    }
+
+    func rotationRadians() -> Float {
+        Float(rotation * .pi / 180)
+    }
+
+    func mirrorFlipOptions() -> MTILayer.FlipOptions {
+        if isQuarterTurn() {
+            .flipVertically
+        } else {
+            .flipHorizontally
+        }
+    }
+
+    private func isQuarterTurn() -> Bool {
+        rotation == 90 || rotation == 270
+    }
+}
+
+private struct MaskImage {
+    var extent: CGRect?
+    var cornerRadius: Float?
+    var image: CIImage?
+
+    func get(extent: CGRect, settings: ShapeEffectSettings) -> CIImage? {
+        guard extent == self.extent else {
+            return nil
+        }
+        guard settings.cornerRadius == cornerRadius else {
+            return nil
+        }
+        return image
+    }
+
+    mutating func set(extent: CGRect, settings: ShapeEffectSettings, image: CIImage?) {
+        self.extent = extent
+        cornerRadius = settings.cornerRadius
+        self.image = image
+    }
+}
+
+final class ShapeEffect: VideoEffect, @unchecked Sendable {
     private var settings: ShapeEffectSettings = .init()
+    private var cachedMask = MaskImage()
+    private var cachedBorderMask = MaskImage()
 
     func setSettings(settings: ShapeEffectSettings) {
         processorPipelineQueue.async {
@@ -27,24 +100,28 @@ final class ShapeEffect: VideoEffect {
         }
     }
 
-    private func makeRoundedRectangleMask(
-        _ videoSourceImage: CIImage,
-        _ cornerRadius: Float
-    ) -> CIImage? {
+    private func makeMaskImage(_ extent: CGRect,
+                               _ settings: ShapeEffectSettings,
+                               _ cache: inout MaskImage) -> CIImage?
+    {
+        if let image = cache.get(extent: extent, settings: settings) {
+            return image
+        }
         let roundedRectangleGenerator = CIFilter.roundedRectangleGenerator()
         roundedRectangleGenerator.color = .green
         // Slightly smaller to remove ~1px black line around image.
-        var extent = videoSourceImage.extent
-        extent.origin.x += 1
-        extent.origin.y += 1
-        extent.size.width -= 2
-        extent.size.height -= 2
-        roundedRectangleGenerator.extent = extent
-        var radiusPixels = Float(min(videoSourceImage.extent.height, videoSourceImage.extent.width))
+        var maskExtent = extent
+        maskExtent.origin.x += 1
+        maskExtent.origin.y += 1
+        maskExtent.size.width -= 2
+        maskExtent.size.height -= 2
+        roundedRectangleGenerator.extent = maskExtent
+        var radiusPixels = Float(min(extent.height, extent.width))
         radiusPixels /= 2
-        radiusPixels *= cornerRadius
+        radiusPixels *= settings.cornerRadius
         roundedRectangleGenerator.radius = radiusPixels
-        return roundedRectangleGenerator.outputImage
+        cache.set(extent: extent, settings: settings, image: roundedRectangleGenerator.outputImage)
+        return cache.get(extent: extent, settings: settings)
     }
 
     private func makeSharpCornersImage(_ image: CIImage, _ settings: ShapeEffectSettings) -> CIImage {
@@ -64,7 +141,7 @@ final class ShapeEffect: VideoEffect {
         if settings.borderWidth == 0 {
             let roundedCornersBlender = CIFilter.blendWithMask()
             roundedCornersBlender.inputImage = image
-            roundedCornersBlender.maskImage = makeRoundedRectangleMask(image, settings.cornerRadius)
+            roundedCornersBlender.maskImage = makeMaskImage(image.extent, settings, &cachedMask)
             return roundedCornersBlender.outputImage ?? image
         } else {
             let (borderWidth, scaleX, scaleY) = settings.borderWidthAndScale(image.extent)
@@ -74,12 +151,12 @@ final class ShapeEffect: VideoEffect {
                 .translated(x: -borderWidth, y: -borderWidth)
             let roundedCornersBlender = CIFilter.blendWithMask()
             roundedCornersBlender.inputImage = borderImage
-            roundedCornersBlender.maskImage = makeRoundedRectangleMask(borderImage, settings.cornerRadius)
+            roundedCornersBlender.maskImage = makeMaskImage(borderImage.extent, settings, &cachedBorderMask)
             guard let roundedBorderImage = roundedCornersBlender.outputImage else {
                 return image
             }
             roundedCornersBlender.inputImage = image
-            roundedCornersBlender.maskImage = makeRoundedRectangleMask(image, settings.cornerRadius)
+            roundedCornersBlender.maskImage = makeMaskImage(image.extent, settings, &cachedMask)
             guard let widgetImage = roundedCornersBlender.outputImage else {
                 return image
             }
@@ -104,17 +181,33 @@ final class ShapeEffect: VideoEffect {
 
     override func executeEarly(_ image: CIImage, _: VideoEffectInfo) -> CIImage {
         if settings.cropEnabled {
-            return crop(image)
+            crop(image)
         } else {
-            return image
+            image
         }
     }
 
     override func execute(_ image: CIImage, _: VideoEffectInfo) -> CIImage {
         if settings.cornerRadius == 0 {
-            return makeSharpCornersImage(image, settings)
+            makeSharpCornersImage(image, settings)
         } else {
-            return makeRoundedCornersImage(image, settings)
+            makeRoundedCornersImage(image, settings)
         }
+    }
+
+    override func modifyMetalPetalWidgetShape(_ shape: inout MetalPetalWidgetShape) {
+        if settings.cropEnabled {
+            let region = shape.contentRegion
+            shape.contentRegion = CGRect(x: region.minX + settings.cropX * region.width,
+                                         y: region.minY + settings.cropY * region.height,
+                                         width: settings.cropWidth * region.width,
+                                         height: settings.cropHeight * region.height)
+        }
+        shape.cornerRadius = settings.cornerRadius
+        shape.borderWidth = settings.borderWidth
+        shape.borderColor = MTIColor(red: Float(settings.borderColor.red),
+                                     green: Float(settings.borderColor.green),
+                                     blue: Float(settings.borderColor.blue),
+                                     alpha: Float(settings.borderColor.alpha))
     }
 }

@@ -12,15 +12,15 @@ struct VideoEffectInfo {
     let isFirstAfterAttach: Bool
 
     func sceneDetections() -> Detections? {
-        return detections[sceneVideoSourceId]
+        detections[sceneVideoSourceId]
     }
 
     func sceneFaceDetections() -> [VNFaceObservation]? {
-        return detections[sceneVideoSourceId]?.face
+        detections[sceneVideoSourceId]?.face
     }
 
     func faceDetections(_ videoSourceId: UUID) -> [VNFaceObservation]? {
-        return detections[videoSourceId]?.face
+        detections[videoSourceId]?.face
     }
 
     func getCiImage(_ videoSourceId: UUID) -> CIImage? {
@@ -32,6 +32,16 @@ struct VideoEffectInfo {
         }
         return CIImage(cvPixelBuffer: imageBuffer)
     }
+
+    func getMetalPetalImage(_ videoSourceId: UUID) -> MTIImage? {
+        guard let imageBuffer = detectionJobs
+            .first(where: { $0.videoSourceId == videoSourceId })?
+            .imageBuffer
+        else {
+            return videoUnit.getMetalPetalImage(videoSourceId, presentationTimeStamp)
+        }
+        return MTIImage(cvPixelBuffer: imageBuffer, alphaType: .alphaIsOne)
+    }
 }
 
 enum VideoEffectDetectionsMode {
@@ -40,43 +50,43 @@ enum VideoEffectDetectionsMode {
     case interval(UUID?, Double)
 }
 
-class VideoEffect: NSObject {
+class VideoEffect: NSObject, @unchecked Sendable {
     var effects: [VideoEffect] = []
 
     func needsFaceDetections(_: Double) -> VideoEffectDetectionsMode {
-        return .off
+        .off
     }
 
     func needsTextDetections(_: Double) -> VideoEffectDetectionsMode {
-        return .off
+        .off
     }
 
     func isEnabled() -> Bool {
-        return true
+        true
     }
 
     func executeEarly(_ image: CIImage, _: VideoEffectInfo) -> CIImage {
-        return image
+        image
     }
 
     func execute(_ image: CIImage, _: VideoEffectInfo) -> CIImage {
-        return image
+        image
     }
 
     func executeMetalPetal(_ image: MTIImage, _: VideoEffectInfo) -> MTIImage {
-        return image
+        image
     }
 
     func isMetalPetal() -> Bool {
-        return false
+        false
     }
 
-    func prepare(_: CIImage, _: VideoEffectInfo) {}
+    func prepare(_: CGSize, _: VideoEffectInfo) {}
 
     func removed() {}
 
     func shouldRemove() -> Bool {
-        return false
+        false
     }
 
     func applyEffectsResizeMirrorMove(_ image: CIImage,
@@ -92,6 +102,23 @@ class VideoEffect: NSObject {
             .cropped(to: backgroundImageExtent)
     }
 
+    func applyEffectsResizeMirrorMoveMetalPetal(_ image: MTIImage,
+                                                _ sceneWidget: SettingsSceneWidget,
+                                                _ mirror: Bool,
+                                                _ backgroundImage: MTIImage,
+                                                _ info: VideoEffectInfo,
+                                                _ widgetShape: MetalPetalWidgetShape? = nil) -> MTIImage
+    {
+        var shape = widgetShape ?? MetalPetalWidgetShape(contentRegion: image.extent)
+        let image = applyEffectsMetalPetal(image, info)
+        for effect in effects {
+            effect.modifyMetalPetalWidgetShape(&shape)
+        }
+        return image.resizeMirrorMoveComposited(sceneWidget.layout, mirror, backgroundImage, shape)
+    }
+
+    func modifyMetalPetalWidgetShape(_: inout MetalPetalWidgetShape) {}
+
     private func applyEarlyEffects(_ image: CIImage, _ info: VideoEffectInfo) -> CIImage {
         var image = image
         for effect in effects {
@@ -106,5 +133,13 @@ class VideoEffect: NSObject {
             image = effect.execute(image, info)
         }
         return image.cropped(to: image.extent.insetBy(dx: graphicsEpsilon, dy: graphicsEpsilon))
+    }
+
+    private func applyEffectsMetalPetal(_ image: MTIImage, _ info: VideoEffectInfo) -> MTIImage {
+        var image = image
+        for effect in effects {
+            image = effect.executeMetalPetal(image, info)
+        }
+        return image
     }
 }

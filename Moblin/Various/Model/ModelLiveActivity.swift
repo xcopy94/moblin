@@ -11,17 +11,26 @@ extension Model {
         guard liveActivity == nil else {
             return
         }
-        liveActivity = try? Activity.request(
-            attributes: LiveActivityAttributes(),
-            content: .init(state: makeState(), staleDate: nil)
-        )
+        do {
+            liveActivity = try Activity.request(
+                attributes: LiveActivityAttributes(),
+                content: .init(state: makeState(), staleDate: nil)
+            )
+            logger.info("live-activity: Started")
+        } catch {
+            logger.info("live-activity: Start failed with error: \(error)")
+        }
     }
 
     func stopLiveActivity() {
         let semaphore = DispatchSemaphore(value: 0)
-        Task {
-            await liveActivity?.end(nil, dismissalPolicy: .immediate)
-            semaphore.signal()
+        DispatchQueue.global().async {
+            Task {
+                for activity in Activity<LiveActivityAttributes>.activities {
+                    await activity.end(nil, dismissalPolicy: .immediate)
+                }
+                semaphore.signal()
+            }
         }
         semaphore.wait()
         liveActivity = nil

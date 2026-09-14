@@ -1,10 +1,10 @@
 import Foundation
 import SwiftUI
 
-private let faceBackgroundImagePath = URL.documentsDirectory.appending(component: "faceBackgroundImage.img")
+let faceBackgroundImagePath = URL.documentsDirectory.appending(component: "faceBackgroundImage.img")
 
 extension Model {
-    func saveFaceBackgroundImage(data: Data) {
+    nonisolated func saveFaceBackgroundImage(data: Data) {
         try? data.write(to: faceBackgroundImagePath)
     }
 
@@ -16,9 +16,5 @@ extension Model {
             return
         }
         faceBackgroundImage = CIImage(cgImage: cgImage)
-    }
-
-    func deleteFaceBackgroundImage() {
-        try? FileManager.default.removeItem(at: faceBackgroundImagePath)
     }
 }

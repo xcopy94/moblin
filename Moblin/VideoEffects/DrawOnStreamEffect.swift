@@ -1,4 +1,5 @@
 import CoreImage
+import MetalPetal
 import SwiftUI
 
 func drawOnStreamCreatePath(points: [CGPoint]) -> Path {
@@ -19,7 +20,7 @@ func drawOnStreamCreatePath(points: [CGPoint]) -> Path {
 }
 
 private func calculateMidPoint(_ point1: CGPoint, _ point2: CGPoint) -> CGPoint {
-    return CGPoint(x: (point1.x + point2.x) / 2, y: (point1.y + point2.y) / 2)
+    CGPoint(x: (point1.x + point2.x) / 2, y: (point1.y + point2.y) / 2)
 }
 
 private func transformPoint(
@@ -37,9 +38,9 @@ private func transformPoint(
     return CGPoint(x: x, y: point.y * scale - offsetY)
 }
 
-final class DrawOnStreamEffect: VideoEffect {
+final class DrawOnStreamEffect: VideoEffect, @unchecked Sendable {
     private let filter = CIFilter.sourceOverCompositing()
-    private var overlay: CIImage?
+    private var overlay: EffectImageCgImage?
 
     func updateOverlay(videoSize: CGSize, size: CGSize, lines: [DrawOnStreamLine], mirror: Bool) {
         DispatchQueue.main.async {
@@ -89,16 +90,23 @@ final class DrawOnStreamEffect: VideoEffect {
             guard let uiImage = renderer.uiImage else {
                 return
             }
-            let image = CIImage(image: uiImage)
+            let overlay = uiImage.cgImage?.toEffectImage()
             processorPipelineQueue.async {
-                self.overlay = image
+                self.overlay = overlay
             }
         }
     }
 
     override func execute(_ image: CIImage, _: VideoEffectInfo) -> CIImage {
-        filter.inputImage = overlay
+        filter.inputImage = overlay?.getCiImage()
         filter.backgroundImage = image
         return filter.outputImage ?? image
+    }
+
+    override func executeMetalPetal(_ image: MTIImage, _: VideoEffectInfo) -> MTIImage {
+        guard let overlay = overlay?.getMetalPetalImage() else {
+            return image
+        }
+        return overlay.positionComposited(CGPoint(x: image.extent.midX, y: image.extent.midY), image)
     }
 }

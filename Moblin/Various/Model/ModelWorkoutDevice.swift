@@ -2,12 +2,12 @@ import Foundation
 
 extension Model {
     func isWorkoutDeviceEnabled(device: SettingsWorkoutDevice) -> Bool {
-        return device.enabled
+        device.enabled
     }
 
     func enableWorkoutDevice(device: SettingsWorkoutDevice) {
         if !workoutDevices.keys.contains(device.id) {
-            let workoutDevice = WorkoutDevice()
+            let workoutDevice = WorkoutDevice(wheelCircumference: device.wheelCircumference)
             workoutDevice.delegate = self
             workoutDevices[device.id] = workoutDevice
         }
@@ -19,7 +19,11 @@ extension Model {
     }
 
     private func getWorkoutDeviceSettings(device: WorkoutDevice) -> SettingsWorkoutDevice? {
-        return database.workoutDevices.devices.first(where: { workoutDevices[$0.id] === device })
+        database.workoutDevices.devices.first(where: { workoutDevices[$0.id] === device })
+    }
+
+    func setWorkoutDeviceWheelCircumference(device: SettingsWorkoutDevice) {
+        workoutDevices[device.id]?.setWheelCircumference(millimeters: device.wheelCircumference)
     }
 
     func setCurrentWorkoutDevice(device: SettingsWorkoutDevice) {
@@ -28,7 +32,7 @@ extension Model {
     }
 
     func getWorkoutDeviceState(device: SettingsWorkoutDevice) -> WorkoutDeviceState {
-        return workoutDevices[device.id]?.getState() ?? .disconnected
+        workoutDevices[device.id]?.getState() ?? .disconnected
     }
 
     func autoStartWorkoutDevices() {
@@ -44,17 +48,24 @@ extension Model {
     }
 
     func isAnyWorkoutDeviceConfigured() -> Bool {
-        return database.workoutDevices.devices.contains(where: { $0.enabled })
+        database.workoutDevices.devices.contains(where: \.enabled)
     }
 
     func areAllWorkoutDevicesConnected() -> Bool {
-        return !workoutDevices.values.contains(where: {
+        !workoutDevices.values.contains(where: {
             getWorkoutDeviceSettings(device: $0)?.enabled == true && $0.getState() != .connected
         })
     }
+
+    private func isCyclingSpeedCadenceReportingCadence() -> Bool {
+        guard let latestCyclingSpeedCadenceCadenceTime else {
+            return false
+        }
+        return latestCyclingSpeedCadenceCadenceTime.duration(to: .now) < .seconds(5)
+    }
 }
 
-extension Model: WorkoutDeviceDelegate {
+extension Model: @preconcurrency WorkoutDeviceDelegate {
     func workoutDeviceState(_ device: WorkoutDevice, state: WorkoutDeviceState) {
         DispatchQueue.main.async {
             guard let device = self.getWorkoutDeviceSettings(device: device) else {
@@ -81,7 +92,21 @@ extension Model: WorkoutDeviceDelegate {
     func workoutDeviceCyclingPower(_: WorkoutDevice, power: Int, cadence: Int) {
         DispatchQueue.main.async {
             self.cyclingPower = power
-            self.cyclingCadence = cadence
+            if !self.isCyclingSpeedCadenceReportingCadence() {
+                self.cyclingCadence = cadence
+            }
+        }
+    }
+
+    func workoutDeviceCyclingSpeedCadence(_: WorkoutDevice, speed: Double?, cadence: Int?) {
+        DispatchQueue.main.async {
+            if let cadence {
+                self.cyclingCadence = cadence
+                self.latestCyclingSpeedCadenceCadenceTime = .now
+            }
+            if let speed {
+                self.cyclingSpeed = speed
+            }
         }
     }
 

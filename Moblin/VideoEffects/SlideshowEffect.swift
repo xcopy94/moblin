@@ -1,4 +1,5 @@
 import CoreImage
+import MetalPetal
 
 struct SlideshowEffectSlide {
     let widgetId: UUID
@@ -6,7 +7,7 @@ struct SlideshowEffectSlide {
     let time: Double
 }
 
-final class SlideshowEffect: VideoEffect {
+final class SlideshowEffect: VideoEffect, @unchecked Sendable {
     let slides: [SlideshowEffectSlide]
     private var currentSlideIndex: Int = 0
     private var currentSlideEndTime: Double?
@@ -30,8 +31,14 @@ final class SlideshowEffect: VideoEffect {
 
     override func execute(_ image: CIImage, _ info: VideoEffectInfo) -> CIImage {
         let (effect, prepareEffect) = getEffects(info.presentationTimeStamp.seconds)
-        prepareEffect?.prepare(image, info)
+        prepareEffect?.prepare(image.extent.size, info)
         return effect?.execute(image, info) ?? image
+    }
+
+    override func executeMetalPetal(_ image: MTIImage, _ info: VideoEffectInfo) -> MTIImage {
+        let (effect, prepareEffect) = getEffects(info.presentationTimeStamp.seconds)
+        prepareEffect?.prepare(image.extent.size, info)
+        return effect?.executeMetalPetal(image, info) ?? image
     }
 
     private func getEffects(_ presentationTimeStamp: Double) -> (VideoEffect?, VideoEffect?) {

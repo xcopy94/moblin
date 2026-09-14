@@ -1,5 +1,6 @@
 import Charts
 import CoreImage
+import MetalPetal
 import SwiftUI
 
 private let wheelSize = 400.0
@@ -53,9 +54,9 @@ private struct ArrowView: View {
     }
 }
 
-final class WheelOfLuckEffect: VideoEffect {
-    private var wheel: CIImage?
-    private var arrow: CIImage?
+final class WheelOfLuckEffect: VideoEffect, @unchecked Sendable {
+    private var wheel: EffectImageCgImage?
+    private var arrow: EffectImageCgImage?
     private var startPresentationTimeStamp: Double = .infinity
     private var previousPresentationTimeStamp: Double = 0
     private var speed: Double = 0
@@ -99,7 +100,7 @@ final class WheelOfLuckEffect: VideoEffect {
     }
 
     override func execute(_ image: CIImage, _ info: VideoEffectInfo) -> CIImage {
-        guard let wheel, let arrow else {
+        guard let wheel = wheel?.getCiImage(), let arrow = arrow?.getCiImage() else {
             return image
         }
         updateAngle(info.presentationTimeStamp.seconds)
@@ -114,6 +115,29 @@ final class WheelOfLuckEffect: VideoEffect {
             .move(sceneWidget.layout, image.extent.size)
             .cropped(to: image.extent)
             .composited(over: image)
+    }
+
+    override func executeMetalPetal(_ image: MTIImage, _ info: VideoEffectInfo) -> MTIImage {
+        guard let wheel = wheel?.getMetalPetalImage(), let arrow = arrow?.getMetalPetalImage() else {
+            return image
+        }
+        updateAngle(info.presentationTimeStamp.seconds)
+        let size = wheel.extent.width
+        let arrowSize = arrow.extent.size
+        let contentSize = CGSize(width: size + 0.3 * arrowSize.width, height: size)
+        let position = metalPetalLayerPosition(sceneWidget.layout, contentSize, image.extent.size)
+        let rotation = Float(-angle)
+        let filter = MTIMultilayerCompositingFilter()
+        filter.inputBackgroundImage = image
+        filter.layers = [
+            .init(content: wheel,
+                  position: CGPoint(x: position.x - 0.15 * arrowSize.width, y: position.y),
+                  rotation: rotation),
+            .init(content: arrow,
+                  position: CGPoint(x: position.x + size / 2 - 0.35 * arrowSize.width,
+                                    y: position.y)),
+        ]
+        return filter.outputImage ?? image
     }
 
     private func updateAngle(_ presentationTimeStamp: Double) {
@@ -141,23 +165,17 @@ final class WheelOfLuckEffect: VideoEffect {
     }
 
     @MainActor
-    private func renderWheel(size: Double, options: [WheelOfLuckEffectOption]) -> CIImage? {
+    private func renderWheel(size: Double, options: [WheelOfLuckEffectOption]) -> EffectImageCgImage? {
         guard #available(iOS 17, *) else {
             return nil
         }
         let renderer = ImageRenderer(content: WheelView(size: size, options: options))
-        guard let image = renderer.uiImage else {
-            return nil
-        }
-        return CIImage(image: image)
+        return renderer.cgImage?.toEffectImage()
     }
 
     @MainActor
-    private func renderArrow(size: Double) -> CIImage? {
+    private func renderArrow(size: Double) -> EffectImageCgImage? {
         let renderer = ImageRenderer(content: ArrowView(size: size))
-        guard let image = renderer.uiImage else {
-            return nil
-        }
-        return CIImage(image: image)
+        return renderer.cgImage?.toEffectImage()
     }
 }

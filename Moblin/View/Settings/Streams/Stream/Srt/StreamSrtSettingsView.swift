@@ -12,6 +12,9 @@ struct StreamSrtSettingsView: View {
         guard latency >= 0 else {
             return String(localized: "Too small")
         }
+        guard latency <= 65535 else {
+            return String(localized: "Too big")
+        }
         return nil
     }
 
@@ -55,14 +58,17 @@ struct StreamSrtSettingsView: View {
                     valueFormat: { "\($0) ms" }
                 )
                 .disabled(stream.enabled && model.isLive)
-                if srt.implementation == .moblin && srt.latency < 1000 {
+                if srt.implementation == .moblin, srt.latency < 1000 {
                     Text("""
                     ⚠️ The \"Moblin\" implementation does not perform well with low latency. \
                     Select the \"Official\" implementation at the bottom of this page.
                     """)
                 }
                 NavigationLink {
-                    StreamSrtAdaptiveBitrateSettingsView(stream: stream, srt: srt)
+                    StreamSrtAdaptiveBitrateSettingsView(model: model,
+                                                         stream: stream,
+                                                         srt: srt,
+                                                         adaptiveBitrate: srt.adaptiveBitrate)
                 } label: {
                     Toggle("Adaptive bitrate", isOn: $srt.adaptiveBitrateEnabled)
                         .onChange(of: srt.adaptiveBitrateEnabled) { _ in

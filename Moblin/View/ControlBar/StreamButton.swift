@@ -39,7 +39,7 @@ private struct EndButtonView: View {
                 }
             }
             .confirmationDialog("", isPresented: $presentingStopConfirm) {
-                if model.stream.obsAutoStopStream && model.stream.obsAutoStopRecording {
+                if model.stream.obsAutoStopStream, model.stream.obsAutoStopRecording {
                     Button("End but leave OBS streaming and recording") {
                         _ = model.stopStream(stopObsStreamIfEnabled: false, stopObsRecordingIfEnabled: false)
                     }
@@ -110,13 +110,18 @@ private struct SetupButtonView: View {
 
 struct StreamButton: View {
     @EnvironmentObject var model: Model
+    @ObservedObject var show: Show
     @State private var presentingGoLiveNotificationConfirm = false
 
     var body: some View {
         if model.isLive {
             EndButtonView(presentingGoLiveNotificationConfirm: $presentingGoLiveNotificationConfirm)
+                .disabled(show.chatPhone)
+                .opacity(show.chatPhone ? 0.5 : 1)
         } else if model.isStreamConfigured() {
             GoLiveButtonView(presentingGoLiveNotificationConfirm: $presentingGoLiveNotificationConfirm)
+                .disabled(show.chatPhone)
+                .opacity(show.chatPhone ? 0.5 : 1)
         } else {
             SetupButtonView(createStreamWizard: model.createStreamWizard)
         }

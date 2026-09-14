@@ -6,15 +6,15 @@ enum SettingsMic: String, Codable, CaseIterable {
     case back = "Back"
     case top = "Top"
 
-    init(from decoder: Decoder) throws {
+    init(from decoder: any Decoder) throws {
         self = try SettingsMic(rawValue: decoder.singleValueContainer().decode(RawValue.self)) ??
             getDefaultMic()
     }
 }
 
-class SettingsMicsMic: Codable, Identifiable, Equatable, ObservableObject {
+class SettingsMicsMic: Codable, Identifiable, Equatable, ObservableObject, @unchecked Sendable {
     static func == (lhs: SettingsMicsMic, rhs: SettingsMicsMic) -> Bool {
-        return lhs.inputUid == rhs.inputUid && lhs.dataSourceId == rhs.dataSourceId
+        lhs.inputUid == rhs.inputUid && lhs.dataSourceId == rhs.dataSourceId
     }
 
     var id: String {
@@ -25,14 +25,15 @@ class SettingsMicsMic: Codable, Identifiable, Equatable, ObservableObject {
     var inputUid: String = ""
     var dataSourceId: Int?
     var builtInOrientation: SettingsMic?
+    @Published var delay: Double = 0.0
     @Published var connected: Bool = false
 
     func isAudioSession() -> Bool {
-        return isBuiltin() || isExternal()
+        isBuiltin() || isExternal()
     }
 
     func isBuiltin() -> Bool {
-        return builtInOrientation != nil
+        builtInOrientation != nil
     }
 
     func isExternal() -> Bool {
@@ -43,6 +44,9 @@ class SettingsMicsMic: Codable, Identifiable, Equatable, ObservableObject {
             return false
         }
         if isSrtlaCameraOrMic(camera: name) {
+            return false
+        }
+        if isSrtClientCameraOrMic(camera: name) {
             return false
         }
         if isRistCameraOrMic(camera: name) {
@@ -64,60 +68,67 @@ class SettingsMicsMic: Codable, Identifiable, Equatable, ObservableObject {
     }
 
     func isRtmp() -> Bool {
-        return isRtmpCameraOrMic(camera: name)
+        isRtmpCameraOrMic(camera: name)
     }
 
     func isSrtla() -> Bool {
-        return isSrtlaCameraOrMic(camera: name)
+        isSrtlaCameraOrMic(camera: name)
+    }
+
+    func isSrtClient() -> Bool {
+        isSrtClientCameraOrMic(camera: name)
     }
 
     func isRist() -> Bool {
-        return isRistCameraOrMic(camera: name)
+        isRistCameraOrMic(camera: name)
     }
 
     func isRtsp() -> Bool {
-        return isRtspCameraOrMic(camera: name)
+        isRtspCameraOrMic(camera: name)
     }
 
     func isWhip() -> Bool {
-        return isWhipCameraOrMic(camera: name)
+        isWhipCameraOrMic(camera: name)
     }
 
     func isWhep() -> Bool {
-        return isWhepCameraOrMic(camera: name)
+        isWhepCameraOrMic(camera: name)
     }
 
     func isNetwork() -> Bool {
-        return isRtmp() || isSrtla() || isRist() || isRtsp() || isWhip() || isWhep()
+        isRtmp() || isSrtla() || isSrtClient() || isRist() || isRtsp() || isWhip() || isWhep()
     }
 
     func isMediaPlayer() -> Bool {
-        return isMediaPlayerCameraOrMic(camera: name)
+        isMediaPlayerCameraOrMic(camera: name)
     }
 
     enum CodingKeys: CodingKey {
-        case name,
-             inputUid,
-             dataSourceID,
-             builtInOrientation
+        case name
+        case inputUid
+        case dataSourceID
+        case builtInOrientation
+        case delay
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.name, name)
         try container.encode(.inputUid, inputUid)
         try container.encode(.dataSourceID, dataSourceId)
         try container.encode(.builtInOrientation, builtInOrientation)
+        try container.encode(.delay, delay)
     }
 
     init() {}
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         name = container.decode(.name, String.self, "")
         inputUid = container.decode(.inputUid, String.self, "")
         dataSourceId = container.decode(.dataSourceID, Int?.self, nil)
         builtInOrientation = container.decode(.builtInOrientation, SettingsMic?.self, nil)
+        delay = container.decode(.delay, Double.self, 0.0)
     }
 }
 
@@ -127,12 +138,12 @@ class SettingsMics: Codable, ObservableObject {
     var defaultMic: String = ""
 
     enum CodingKeys: CodingKey {
-        case all,
-             autoSwitch,
-             defaultMic
+        case all
+        case autoSwitch
+        case defaultMic
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.all, mics)
         try container.encode(.autoSwitch, autoSwitch)
@@ -141,7 +152,7 @@ class SettingsMics: Codable, ObservableObject {
 
     init() {}
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         mics = container.decode(.all, [SettingsMicsMic].self, [])
         autoSwitch = container.decode(.autoSwitch, Bool.self, true)
@@ -157,25 +168,29 @@ class SettingsAudioOutputToInputChannelsMap: Codable {
 class SettingsAudio: Codable, ObservableObject {
     var outputToInputChannelsMap: SettingsAudioOutputToInputChannelsMap = .init()
     @Published var gainDb: Float = 0.0
+    @Published var preferStereoMic: Bool = false
 
     init() {}
 
     enum CodingKeys: CodingKey {
-        case audioOutputToInputChannelsMap,
-             gainDb
+        case audioOutputToInputChannelsMap
+        case gainDb
+        case preferStereoMic
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.audioOutputToInputChannelsMap, outputToInputChannelsMap)
         try container.encode(.gainDb, gainDb)
+        try container.encode(.preferStereoMic, preferStereoMic)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         outputToInputChannelsMap = container.decode(.audioOutputToInputChannelsMap,
                                                     SettingsAudioOutputToInputChannelsMap.self,
                                                     .init())
         gainDb = container.decode(.gainDb, Float.self, 0.0)
+        preferStereoMic = container.decode(.preferStereoMic, Bool.self, false)
     }
 }

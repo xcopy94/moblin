@@ -25,7 +25,7 @@ enum WatchMessageToWatch: String {
     case scoreboardPlayers
 
     static func pack(type: WatchMessageToWatch, data: Any) -> [String: Any] {
-        return [
+        [
             "type": type.rawValue,
             "data": data,
         ]
@@ -63,7 +63,7 @@ enum WatchMessageFromWatch: String {
     case saveReplay
 
     static func pack(type: WatchMessageFromWatch, data: Any) -> [String: Any] {
-        return [
+        [
             "type": type.rawValue,
             "data": data,
         ]
@@ -92,13 +92,14 @@ enum WatchProtocolChatHighlightKind: Codable {
     case reply
     case redemption
     case other
+    case moderator
 }
 
 struct WatchProtocolChatHighlight: Codable {
     let kind: WatchProtocolChatHighlightKind
     let barColor: WatchProtocolColor
     let image: String
-    let title: String
+    let title: String?
 }
 
 struct WatchProtocolChatMessage: Codable {
@@ -132,10 +133,6 @@ enum WatchProtocolWorkoutType: Codable {
     case walking
     case running
     case cycling
-}
-
-struct WatchProtocolStartWorkout: Codable {
-    var type: WatchProtocolWorkoutType
 }
 
 struct WatchProtocolWorkoutStats: Codable {
@@ -245,11 +242,11 @@ struct WatchProtocolInstantReplay: Codable {
 
 extension WatchProtocolColor {
     private func colorScale(_ color: Int) -> Double {
-        return Double(color) / 255
+        Double(color) / 255
     }
 
     func color() -> Color {
-        return Color(
+        Color(
             red: colorScale(red),
             green: colorScale(green),
             blue: colorScale(blue)

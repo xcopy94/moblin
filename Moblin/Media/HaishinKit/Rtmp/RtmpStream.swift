@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 
 let extendedVideoHeader: UInt8 = 0b1000_0000
 
@@ -28,11 +28,11 @@ private func makeVideoHeader(_ frameType: FlvFrameType,
 }
 
 private func makeAvcVideoTagHeader(_ frameType: FlvFrameType, _ packetType: FlvAvcPacketType) -> Data {
-    return makeVideoHeader(frameType, .avc1, packetType, .sequenceStart)
+    makeVideoHeader(frameType, .avc1, packetType, .sequenceStart)
 }
 
 private func makeHevcExtendedTagHeader(_ frameType: FlvFrameType, _ packetType: FlvVideoPacketType) -> Data {
-    return makeVideoHeader(frameType, .hevc, .nal, packetType)
+    makeVideoHeader(frameType, .hevc, .nal, packetType)
 }
 
 protocol RtmpStreamDelegate: AnyObject {
@@ -58,7 +58,7 @@ private enum State {
     case publishing
 }
 
-class RtmpStream {
+class RtmpStream: @unchecked Sendable {
     let info = RtmpStreamInfo()
     var streamId: UInt32 = 0
     private var state: State = .initialized
@@ -80,9 +80,9 @@ class RtmpStream {
     private var prevRebasedAudioTimeStamp: Double?
     private var prevRebasedVideoTimeStamp: Double?
     private let processor: Processor
-    weak var delegate: RtmpStreamDelegate?
+    weak var delegate: (any RtmpStreamDelegate)?
 
-    init(name: String, processor: Processor, delegate: RtmpStreamDelegate, queue: DispatchQueue) {
+    init(name: String, processor: Processor, delegate: any RtmpStreamDelegate, queue: DispatchQueue) {
         self.name = name
         self.processor = processor
         self.delegate = delegate
@@ -122,7 +122,9 @@ class RtmpStream {
     func closeInternal() {
         setState(state: .initialized)
         stopConnectTimer()
-        processor.stopEncoding(self)
+        processorPipelineQueue.async {
+            self.processor.stopEncoding(self)
+        }
     }
 
     func onInternal(data: AsObject) {
@@ -156,7 +158,9 @@ class RtmpStream {
             sendFCUnpublish()
             sendDeleteStream()
             sendCloseStream()
-            processor.stopEncoding(self)
+            processorPipelineQueue.async {
+                self.processor.stopEncoding(self)
+            }
         }
         switch state {
         case .open:
@@ -175,7 +179,9 @@ class RtmpStream {
 
     private func disconnectInternal() {
         setState(state: .initialized)
-        processor.stopEncoding(self)
+        processorPipelineQueue.async {
+            self.processor.stopEncoding(self)
+        }
         stopConnectTimer()
         connection.disconnect()
     }
@@ -267,7 +273,9 @@ class RtmpStream {
              arguments: .string("onMetaData"), .object(createOnMetaData()))
         stopConnectTimer()
         delegate?.rtmpStreamConnected(self)
-        processor.startEncoding(self)
+        processorPipelineQueue.async {
+            self.processor.startEncoding(self)
+        }
     }
 
     private func sendCreateStream() {
@@ -400,9 +408,9 @@ class RtmpStream {
             count: Int(audioBuffer.byteLength)
         )
         prevRebasedAudioTimeStamp = rebasedTimestamp
+        audioTimeStampDelta += delta
         handleEncodedAudioBuffer(buffer, UInt32(audioTimeStampDelta))
         audioTimeStampDelta -= floor(audioTimeStampDelta)
-        audioTimeStampDelta += delta
     }
 
     private func videoEncoderOutputFormatInternal(
@@ -431,11 +439,10 @@ class RtmpStream {
     private func videoEncoderOutputSampleBufferInternal(_ format: VideoEncoderSettings.Format,
                                                         _ sampleBuffer: CMSampleBuffer)
     {
-        let decodeTimeStamp: Double
-        if sampleBuffer.decodeTimeStamp.isValid {
-            decodeTimeStamp = sampleBuffer.decodeTimeStamp.seconds
+        let decodeTimeStamp: Double = if sampleBuffer.decodeTimeStamp.isValid {
+            sampleBuffer.decodeTimeStamp.seconds
         } else {
-            decodeTimeStamp = sampleBuffer.presentationTimeStamp.seconds
+            sampleBuffer.presentationTimeStamp.seconds
         }
         guard let rebasedTimestamp = rebaseTimeStamp(timestamp: decodeTimeStamp) else {
             return
@@ -460,9 +467,9 @@ class RtmpStream {
         buffer.append(contentsOf: compositionTime.bigEndian.data[1 ..< 4])
         buffer.append(data)
         prevRebasedVideoTimeStamp = rebasedTimestamp
+        videoTimeStampDelta += delta
         handleEncodedVideoBuffer(buffer, UInt32(videoTimeStampDelta))
         videoTimeStampDelta -= floor(videoTimeStampDelta)
-        videoTimeStampDelta += delta
     }
 
     private func rebaseTimeStamp(timestamp: Double) -> Double? {

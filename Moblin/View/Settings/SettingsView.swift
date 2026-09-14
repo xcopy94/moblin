@@ -2,6 +2,23 @@ import SwiftUI
 
 let settingsHalfWidth = 350.0
 
+private struct AppModeView: View {
+    @EnvironmentObject var model: Model
+    @ObservedObject var database: Database
+
+    var body: some View {
+        Picker("App mode", selection: $database.appMode) {
+            ForEach(SettingsAppMode.allCases, id: \.self) {
+                Text($0.toString())
+            }
+        }
+        .disabled(model.isLive || model.isRecording)
+        .onChange(of: database.appMode) { _ in
+            model.appModeChanged()
+        }
+    }
+}
+
 struct SettingsView: View {
     @EnvironmentObject var model: Model
     @ObservedObject var database: Database
@@ -50,11 +67,17 @@ struct SettingsView: View {
                     } label: {
                         Label("Audio", systemImage: "waveform")
                     }
+                    NavigationLink {
+                        MacrosSettingsView(model: model, database: database, macros: database.macros)
+                    } label: {
+                        Label("Macros", systemImage: "increase.indent")
+                    }
                 }
                 NavigationLink {
                     LocationSettingsView(
                         database: database,
                         location: database.location,
+                        locationManager: model.locationManager,
                         stream: $model.stream
                     )
                 } label: {
@@ -63,7 +86,7 @@ struct SettingsView: View {
             }
             Section {
                 NavigationLink {
-                    StoreSettingsView(store: model.store)
+                    StoreSettingsView(model: model, store: model.store)
                 } label: {
                     Label {
                         Text("Store (support us) ❤️")
@@ -98,6 +121,11 @@ struct SettingsView: View {
                     } label: {
                         Label("Media players", systemImage: "play.rectangle.on.rectangle")
                     }
+                    NavigationLink {
+                        AppleMusicSettingsView(model: model)
+                    } label: {
+                        Label("Apple Music", systemImage: "music.note")
+                    }
                 }
             }
             if database.showAllSettings {
@@ -124,6 +152,17 @@ struct SettingsView: View {
                             Label("Keyboard", systemImage: "keyboard")
                         }
                     }
+                    #if !targetEnvironment(macCatalyst)
+                    if isPad() {
+                        NavigationLink {
+                            StreamDecksSettingsView(model: model,
+                                                    streamDeck: model.streamDeck,
+                                                    streamDecks: database.streamDecks)
+                        } label: {
+                            Label("Stream decks", systemImage: "square.grid.3x3.square")
+                        }
+                    }
+                    #endif
                     NavigationLink {
                         RemoteControlSettingsView(database: database, stream: $model.stream)
                     } label: {
@@ -221,10 +260,16 @@ struct SettingsView: View {
                 }
             }
             Section {
+                if database.showAllSettings, !isMac() {
+                    AppModeView(database: database)
+                }
                 Toggle("Show all settings", isOn: $database.showAllSettings)
             }
             Section {
-                ResetSettingsView()
+                SettingsSaveView(model: model)
+            }
+            Section {
+                SettingsResetView()
             }
         }
         .navigationTitle("Settings")

@@ -79,15 +79,16 @@ struct PlayerLiveResponse: Codable {
     }
 }
 
-final class SoopChat: NSObject {
+@MainActor
+final class SoopChat: NSObject, @unchecked Sendable {
     private var model: Model
     private var channelName: String
     private var streamId: String
-    private var task: Task<Void, Error>?
+    private var task: Task<Void, any Error>?
     private var connected: Bool = false
     private var webSocket: URLSessionWebSocketTask
     private var emotes: Emotes
-    private var keepAliveTask: Task<Void, Error>?
+    private var keepAliveTask: Task<Void, any Error>?
 
     init(model: Model, channelName: String, streamId: String) {
         self.model = model
@@ -168,11 +169,11 @@ final class SoopChat: NSObject {
     }
 
     func isConnected() -> Bool {
-        return connected
+        connected
     }
 
     func hasEmotes() -> Bool {
-        return true
+        true
     }
 
     private func setupConnection(info: PlayerLiveChannel) async throws {
@@ -219,7 +220,7 @@ final class SoopChat: NSObject {
                     connected = true
                     try await sendTwo(chatno: info.chatno, ftk: info.ftk)
                 case .post:
-                    await handlePostMessage(parts: parts)
+                    handlePostMessage(parts: parts)
                 default:
                     break
                 }
@@ -231,34 +232,32 @@ final class SoopChat: NSObject {
         }
     }
 
-    private func handlePostMessage(parts: [String]) async {
+    private func handlePostMessage(parts: [String]) {
         guard parts.count > 5 else {
             logger.info("soop: Bad post length")
             return
         }
         let user = parts[5]
         let segments = createSegments(message: parts[0])
-        await MainActor.run {
-            self.model.appendChatMessage(
-                platform: .soop,
-                messageId: nil,
-                displayName: user,
-                user: user,
-                userId: nil,
-                userColor: nil,
-                userBadges: [],
-                segments: segments,
-                timestamp: model.statusOther.digitalClock,
-                timestampTime: .now,
-                isAction: false,
-                isSubscriber: false,
-                isModerator: false,
-                isOwner: false,
-                bits: nil,
-                highlight: nil,
-                live: true
-            )
-        }
+        model.appendChatMessage(
+            platform: .soop,
+            messageId: nil,
+            displayName: user,
+            user: user,
+            userId: nil,
+            userColor: nil,
+            userBadges: [],
+            segments: segments,
+            timestamp: model.statusOther.digitalClock,
+            timestampTime: .now,
+            isAction: false,
+            isSubscriber: false,
+            isModerator: false,
+            isOwner: false,
+            bits: nil,
+            highlight: nil,
+            live: true
+        )
     }
 
     private func getChannelInfo() async throws -> PlayerLiveChannel {
@@ -285,17 +284,7 @@ final class SoopChat: NSObject {
     }
 
     private func createSegments(message: String) -> [ChatPostSegment] {
-        var segments: [ChatPostSegment] = []
         var id = 0
-        for var segment in makeChatPostTextSegments(text: message, id: &id) {
-            if let text = segment.text {
-                segments += emotes.createSegments(text: text, id: &id)
-                segment.text = nil
-            }
-            if segment.text != nil || segment.url != nil {
-                segments.append(segment)
-            }
-        }
-        return segments
+        return emotes.createSegments(text: message, id: &id)
     }
 }

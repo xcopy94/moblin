@@ -1,6 +1,7 @@
 import CoreImage
+import MetalPetal
 
-final class CameraManEffect: VideoEffect {
+final class CameraManEffect: VideoEffect, @unchecked Sendable {
     private var startTime: Double?
     private let minScale: Double = 0.92
     private let xSpeed: Double = 0.27
@@ -27,36 +28,62 @@ final class CameraManEffect: VideoEffect {
         }
     }
 
-    override func execute(_ image: CIImage, _ info: VideoEffectInfo) -> CIImage {
-        let width = image.extent.width
-        let height = image.extent.height
-        let now = info.presentationTimeStamp.seconds
+    private func calcCropRegion(_ size: CGSize, _ presentationTimeStamp: Double) -> CGRect? {
         if startTime == nil {
-            startTime = now
+            startTime = presentationTimeStamp
         }
-        let elapsed = now - startTime!
+        let elapsed = presentationTimeStamp - startTime!
         let scale = minScale + (1 - minScale) * (0.5 + 0.5 * cos(elapsed * zoomSpeed * speed))
         let isRising = scale - previousScale > 0
-        if previousIsRising && !isRising {
+        if previousIsRising, !isRising {
             isStill.toggle()
         }
         previousScale = scale
         previousIsRising = isRising
         if isStill, !alwaysMove {
-            return image
+            return nil
         }
-        let cropWidth = width * scale
-        let cropHeight = height * scale
-        let maxOffsetX = width - cropWidth
-        let maxOffsetY = height - cropHeight
+        let cropWidth = size.width * scale
+        let cropHeight = size.height * scale
+        let maxOffsetX = size.width - cropWidth
+        let maxOffsetY = size.height - cropHeight
         let cropX = maxOffsetX * (0.5 + 0.5 * sin(elapsed * xSpeed * speed))
         let cropY = maxOffsetY * (0.5 + (moveVertically ? 0.5 * cos(elapsed * ySpeed * speed) : 0))
-        let cropRect = CGRect(x: cropX, y: cropY, width: cropWidth, height: cropHeight)
-        let scaleX = width / cropWidth
-        let scaleY = height / cropHeight
+        return CGRect(x: cropX, y: cropY, width: cropWidth, height: cropHeight)
+    }
+
+    override func execute(_ image: CIImage, _ info: VideoEffectInfo) -> CIImage {
+        guard let cropRect = calcCropRegion(image.extent.size, info.presentationTimeStamp.seconds) else {
+            return image
+        }
+        let scaleX = image.extent.width / cropRect.width
+        let scaleY = image.extent.height / cropRect.height
         return image
             .cropped(to: cropRect)
-            .transformed(by: CGAffineTransform(translationX: -cropX, y: -cropY))
-            .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+            .transformed(by: CGAffineTransform(translationX: -cropRect.minX, y: -cropRect.minY))
+            .transformed(
+                by: CGAffineTransform(scaleX: scaleX, y: scaleY),
+                highQualityDownsample: highQualityDownsampling
+            )
+    }
+
+    override func executeMetalPetal(_ image: MTIImage, _ info: VideoEffectInfo) -> MTIImage {
+        let size = image.extent.size
+        guard let cropRect = calcCropRegion(size, info.presentationTimeStamp.seconds) else {
+            return image
+        }
+        let contentRegion = CGRect(x: cropRect.minX,
+                                   y: size.height - cropRect.maxY,
+                                   width: cropRect.width,
+                                   height: cropRect.height)
+        let filter = MTIMultilayerCompositingFilter()
+        filter.inputBackgroundImage = image
+        filter.layers = [
+            .init(content: image,
+                  contentRegion: contentRegion,
+                  position: CGPoint(x: size.width / 2, y: size.height / 2),
+                  size: size),
+        ]
+        return filter.outputImage ?? image
     }
 }

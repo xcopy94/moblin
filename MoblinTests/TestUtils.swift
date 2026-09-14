@@ -1,12 +1,23 @@
 import Foundation
+@testable import Moblin
 
 private final class BundleToken {}
 
 func isEqual<T: FloatingPoint>(_ actual: T, _ expected: T, epsilon: T) -> Bool {
-    return abs(actual - expected) < epsilon
+    abs(actual - expected) < epsilon
 }
 
-class MessageQueue<Message> {
+func areEqual<T: FloatingPoint>(_ actual: [T], _ expected: [T], epsilon: T) -> Bool {
+    guard actual.count == expected.count else {
+        return false
+    }
+    for index in 0 ..< actual.count where !isEqual(actual[index], expected[index], epsilon: epsilon) {
+        return false
+    }
+    return true
+}
+
+class MessageQueue<Message: Sendable>: @unchecked Sendable {
     private var buffer: [Message] = []
     private var continuations: [CheckedContinuation<Message, Never>] = []
 
@@ -20,9 +31,9 @@ class MessageQueue<Message> {
 
     func get() async -> Message {
         if let message = buffer.popLast() {
-            return message
+            message
         } else {
-            return await withCheckedContinuation {
+            await withCheckedContinuation {
                 continuations.append($0)
             }
         }
@@ -37,4 +48,22 @@ func readMainFile(name: String, suffix: String) throws -> Data {
 func readTestFile(name: String, suffix: String) throws -> Data {
     let url = Bundle(for: BundleToken.self).url(forResource: name, withExtension: suffix)!
     return try Data(contentsOf: url)
+}
+
+func makeEmotes(_ names: [String]) -> Emotes {
+    let emotes = Emotes()
+    var byName: [String: Emote] = [:]
+    for name in names {
+        byName[name] = Emote(url: URL(string: "https://emotes.example.com/\(name)")!)
+    }
+    emotes.addEmotes(byName)
+    return emotes
+}
+
+func texts(_ segments: [ChatPostSegment]) -> [String?] {
+    segments.map(\.text)
+}
+
+func emoteNames(_ segments: [ChatPostSegment]) -> [String?] {
+    segments.map { $0.url?.still?.lastPathComponent }
 }

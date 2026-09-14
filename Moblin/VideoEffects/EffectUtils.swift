@@ -1,8 +1,202 @@
 import CoreImage
+import MetalPetal
 import Vision
 
+nonisolated(unsafe) var highQualityDownsampling = false
+
 func toPixels(_ percentage: Double, _ total: Double) -> Double {
-    return (percentage * total) / 100
+    (percentage * total) / 100
+}
+
+protocol EffectImage {
+    func getCiImage() -> CIImage
+    func getMetalPetalImage() -> MTIImage
+}
+
+final class EffectImageCgImage: EffectImage, @unchecked Sendable {
+    private let source: CGImage
+    private var ciImage: CIImage?
+    private var metalPetalImage: MTIImage?
+
+    init(image: CGImage) {
+        source = image
+    }
+
+    func getCiImage() -> CIImage {
+        if let ciImage {
+            return ciImage
+        }
+        ciImage = CIImage(cgImage: source)
+        return ciImage!
+    }
+
+    func getMetalPetalImage() -> MTIImage {
+        if let metalPetalImage {
+            return metalPetalImage
+        }
+        metalPetalImage = MTIImage(cgImage: source)
+        return metalPetalImage!
+    }
+}
+
+final class EffectImageCiImage: EffectImage, @unchecked Sendable {
+    private let source: CIImage
+    private let isOpaque: Bool
+    private var metalPetalImage: MTIImage?
+
+    init(image: CIImage, isOpaque: Bool) {
+        source = image
+        self.isOpaque = isOpaque
+    }
+
+    func getCiImage() -> CIImage {
+        source
+    }
+
+    func getMetalPetalImage() -> MTIImage {
+        if let metalPetalImage {
+            return metalPetalImage
+        }
+        metalPetalImage = MTIImage(ciImage: source, isOpaque: isOpaque)
+        return metalPetalImage!
+    }
+}
+
+final class EffectImagePixelBuffer: EffectImage, @unchecked Sendable {
+    private let source: CVPixelBuffer
+    private var ciImage: CIImage?
+    private var metalPetalImage: MTIImage?
+
+    init(pixelBuffer: CVPixelBuffer) {
+        source = pixelBuffer
+    }
+
+    func getCiImage() -> CIImage {
+        if let ciImage {
+            return ciImage
+        }
+        ciImage = CIImage(cvPixelBuffer: source)
+        return ciImage!
+    }
+
+    func getMetalPetalImage() -> MTIImage {
+        if let metalPetalImage {
+            return metalPetalImage
+        }
+        metalPetalImage = MTIImage(cvPixelBuffer: source, alphaType: .premultiplied)
+        return metalPetalImage!
+    }
+}
+
+extension CIImage {
+    func toEffectImage(isOpaque: Bool) -> EffectImageCiImage {
+        EffectImageCiImage(image: self, isOpaque: isOpaque)
+    }
+}
+
+extension CGImage {
+    func toEffectImage() -> EffectImageCgImage {
+        EffectImageCgImage(image: self)
+    }
+}
+
+func metalPetalLayerPosition(_ layout: SettingsWidgetLayout,
+                             _ size: CGSize,
+                             _ streamSize: CGSize) -> CGPoint
+{
+    var x: Double
+    var y: Double
+    if layout.alignment.isHorizontalCenter() {
+        x = (streamSize.width - size.width) / 2
+    } else if layout.alignment.isLeft() {
+        x = toPixels(layout.x, streamSize.width)
+    } else {
+        x = streamSize.width - toPixels(layout.x, streamSize.width) - size.width
+    }
+    if layout.alignment.isVerticalCenter() {
+        y = (streamSize.height - size.height) / 2
+    } else if layout.alignment.isTop() {
+        y = toPixels(layout.y, streamSize.height)
+    } else {
+        y = streamSize.height - toPixels(layout.y, streamSize.height) - size.height
+    }
+    return CGPoint(x: x + size.width / 2, y: y + size.height / 2)
+}
+
+extension MTIImage {
+    func moveComposited(_ layout: SettingsWidgetLayout,
+                        _ backgroundImage: MTIImage,
+                        _ contentRegion: CGRect? = nil) -> MTIImage
+    {
+        let contentRegion = contentRegion ?? extent
+        return composited(layout,
+                          contentRegion.size,
+                          false,
+                          backgroundImage,
+                          .init(contentRegion: contentRegion))
+    }
+
+    func positionComposited(_ position: CGPoint,
+                            _ backgroundImage: MTIImage,
+                            _ size: CGSize? = nil) -> MTIImage
+    {
+        let filter = MTIMultilayerCompositingFilter()
+        filter.inputBackgroundImage = backgroundImage
+        filter.layers = [
+            .init(content: self, position: position, size: size),
+        ]
+        return filter.outputImage ?? backgroundImage
+    }
+
+    func resizeMirrorMoveComposited(_ layout: SettingsWidgetLayout,
+                                    _ mirror: Bool,
+                                    _ backgroundImage: MTIImage,
+                                    _ shape: MetalPetalWidgetShape) -> MTIImage
+    {
+        let backgroundImageSize = backgroundImage.extent.size
+        let rotatedSize = shape.rotated(shape.contentRegion.size)
+        let scaleX = toPixels(layout.size, backgroundImageSize.width) / rotatedSize.width
+        let scaleY = toPixels(layout.size, backgroundImageSize.height) / rotatedSize.height
+        let scale = min(scaleX, scaleY)
+        let size = CGSize(width: shape.contentRegion.width * scale,
+                          height: shape.contentRegion.height * scale)
+        return composited(layout, size, mirror, backgroundImage, shape)
+    }
+
+    private func composited(_ layout: SettingsWidgetLayout,
+                            _ size: CGSize,
+                            _ mirror: Bool,
+                            _ backgroundImage: MTIImage,
+                            _ shape: MetalPetalWidgetShape) -> MTIImage
+    {
+        let borderWidth = shape.borderWidthPixels(size)
+        let borderSize = CGSize(width: size.width + 2 * borderWidth,
+                                height: size.height + 2 * borderWidth)
+        let position = metalPetalLayerPosition(layout,
+                                               shape.rotated(borderSize),
+                                               backgroundImage.extent.size)
+        let rotation = shape.rotationRadians()
+        var layers: [MTILayer] = []
+        if borderWidth > 0 {
+            layers.append(.init(content: .white,
+                                position: position,
+                                size: borderSize,
+                                rotation: rotation,
+                                cornerRadius: shape.cornerRadius(borderSize),
+                                tintColor: shape.borderColor))
+        }
+        layers.append(.init(content: self,
+                            contentRegion: shape.contentRegion,
+                            contentFlipOptions: mirror ? shape.mirrorFlipOptions() : [],
+                            position: position,
+                            size: size,
+                            rotation: rotation,
+                            cornerRadius: shape.cornerRadius(size)))
+        let filter = MTIMultilayerCompositingFilter()
+        filter.inputBackgroundImage = backgroundImage
+        filter.layers = layers
+        return filter.outputImage ?? backgroundImage
+    }
 }
 
 extension CIImage {
@@ -32,21 +226,27 @@ extension CIImage {
     }
 
     func move(_ layout: SettingsWidgetLayout, _ streamSize: CGSize) -> CIImage {
-        let x: Double
-        let y: Double
+        var x: Double
+        var y: Double
         if layout.alignment.isHorizontalCenter() {
             x = (streamSize.width - extent.width) / 2 - extent.minX
         } else if layout.alignment.isLeft() {
             x = toPixels(layout.x, streamSize.width) - extent.minX
         } else {
+            x = streamSize.width - toPixels(layout.x, streamSize.width) - extent.width - extent.minX
             // No idea why the extra pixel is needed to get to the right.
-            x = streamSize.width - toPixels(layout.x, streamSize.width) - extent.width - extent.minX + 1
+            if x != 0 {
+                x += 1
+            }
         }
         if layout.alignment.isVerticalCenter() {
             y = (streamSize.height - extent.height) / 2 - extent.minY
         } else if layout.alignment.isTop() {
+            y = streamSize.height - toPixels(layout.y, streamSize.height) - extent.height - extent.minY
             // No idea why the extra pixel is needed to get to the top.
-            y = streamSize.height - toPixels(layout.y, streamSize.height) - extent.height - extent.minY + 1
+            if y != 0 {
+                y += 1
+            }
         } else {
             y = toPixels(layout.y, streamSize.height) - extent.minY
         }
@@ -54,11 +254,11 @@ extension CIImage {
     }
 
     func translated(x: Double, y: Double) -> CIImage {
-        return transformed(by: CGAffineTransform(translationX: x, y: y))
+        transformed(by: CGAffineTransform(translationX: x, y: y))
     }
 
     func scaled(x: Double, y: Double) -> CIImage {
-        return transformed(by: CGAffineTransform(scaleX: x, y: y))
+        transformed(by: CGAffineTransform(scaleX: x, y: y), highQualityDownsample: highQualityDownsampling)
     }
 
     func scaledTo(size: CGSize) -> CIImage {

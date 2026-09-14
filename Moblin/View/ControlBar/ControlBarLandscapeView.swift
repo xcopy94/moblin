@@ -1,18 +1,19 @@
 import SwiftUI
 
+@MainActor
 private func edgesToIgnore() -> Edge.Set {
     if isPhone() {
-        return [.trailing]
+        [.trailing]
     } else {
-        return []
+        []
     }
 }
 
 func controlBarWidth(quickButtons: SettingsQuickButtons) -> Double {
-    if quickButtons.bigButtons && quickButtons.twoColumns {
-        return controlBarWidthBigQuickButtons
+    if quickButtons.bigButtons, quickButtons.twoColumns {
+        controlBarWidthBigQuickButtons
     } else {
-        return controlBarWidthDefault
+        controlBarWidthDefault
     }
 }
 
@@ -25,17 +26,17 @@ private struct QuickButtonsView: View {
 
     private func buttonSize() -> Double {
         if quickButtonsSettings.bigButtons {
-            return controlBarQuickButtonSingleQuickButtonSize
+            controlBarQuickButtonSingleQuickButtonSize
         } else {
-            return controlBarButtonSize
+            controlBarButtonSize
         }
     }
 
     private func nameSize() -> Double {
         if quickButtonsSettings.bigButtons {
-            return controlBarQuickButtonNameSingleColumnSize
+            controlBarQuickButtonNameSingleColumnSize
         } else {
-            return controlBarQuickButtonNameSize
+            controlBarQuickButtonNameSize
         }
     }
 
@@ -49,7 +50,7 @@ private struct QuickButtonsView: View {
                                 quickButtons: quickButtons,
                                 quickButtonsSettings: quickButtonsSettings,
                                 orientation: model.orientation,
-                                state: second,
+                                button: second,
                                 size: buttonSize(),
                                 nameSize: nameSize(),
                                 nameWidth: buttonSize()
@@ -61,7 +62,7 @@ private struct QuickButtonsView: View {
                             quickButtons: quickButtons,
                             quickButtonsSettings: quickButtonsSettings,
                             orientation: model.orientation,
-                            state: pair.first,
+                            button: pair.first,
                             size: buttonSize(),
                             nameSize: nameSize(),
                             nameWidth: buttonSize()
@@ -73,7 +74,7 @@ private struct QuickButtonsView: View {
                             quickButtons: quickButtons,
                             quickButtonsSettings: quickButtonsSettings,
                             orientation: model.orientation,
-                            state: second,
+                            button: second,
                             size: buttonSize(),
                             nameSize: nameSize(),
                             nameWidth: width - 10
@@ -84,7 +85,7 @@ private struct QuickButtonsView: View {
                         quickButtons: quickButtons,
                         quickButtonsSettings: quickButtonsSettings,
                         orientation: model.orientation,
-                        state: pair.first,
+                        button: pair.first,
                         size: buttonSize(),
                         nameSize: nameSize(),
                         nameWidth: width - 10
@@ -140,7 +141,7 @@ private struct IconAndSettingsView: View {
                 Image("\(store.iconImage)NoBackground")
                     .interpolation(.high)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .scaledToFit()
                     .frame(width: controlBarButtonSize, height: controlBarButtonSize)
             }
             .buttonStyle(.borderless)
@@ -174,10 +175,10 @@ private struct PageView: View {
                              quickButtonsSettings: quickButtonsSettings,
                              page: page,
                              width: width)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .scrollDisabled(!quickButtonsSettings.enableScroll)
         .rotationEffect(.degrees(180))
-        .padding(.horizontal, 0)
     }
 }
 
@@ -189,10 +190,10 @@ private struct MainPageView: View {
     let width: Double
 
     private func buttonsWidth() -> Double {
-        if quickButtonsSettings.bigButtons && quickButtonsSettings.twoColumns {
-            return width - 20
+        if quickButtonsSettings.bigButtons, quickButtonsSettings.twoColumns {
+            width - 20
         } else {
-            return width - 10
+            width - 10
         }
     }
 
@@ -208,7 +209,7 @@ private struct MainPageView: View {
                      width: width)
             HStack {
                 Spacer(minLength: 0)
-                StreamButton()
+                StreamButton(show: model.show)
                     .padding(.top, 5)
                 Spacer(minLength: 0)
             }
@@ -218,7 +219,8 @@ private struct MainPageView: View {
 }
 
 @available(iOS 17, *)
-private struct ControlBarPageScrollTargetBehavior: ScrollTargetBehavior {
+@MainActor
+private struct ControlBarPageScrollTargetBehavior: @preconcurrency ScrollTargetBehavior {
     let model: Model
 
     func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
@@ -231,15 +233,30 @@ private struct ControlBarPageScrollTargetBehavior: ScrollTargetBehavior {
 }
 
 private struct PageIndicatorView: View {
+    let model: Model
+    let size: CGFloat
     @ObservedObject var quickButtons: QuickButtons
+
+    private func visiblePages() -> [Int] {
+        var pages = [1]
+        for page in 1 ..< controlBarPages where !quickButtons.pairs[page].isEmpty {
+            pages.append(page + 1)
+        }
+        return pages
+    }
 
     var body: some View {
         HStack(spacing: 3) {
-            ForEach(1 ... controlBarPages, id: \.self) { page in
+            ForEach(visiblePages(), id: \.self) { page in
                 Image(systemName: quickButtons.activePage == page ? "circle.fill" : "circle")
-                    .font(.system(size: 5))
+                    .font(.system(size: size))
                     .padding(.bottom, 0)
                     .foregroundStyle(.white)
+                    .onTapGesture {
+                        quickButtons.page = page
+                        quickButtons.activePage = page
+                        model.updateQuickButtonPairs()
+                    }
             }
         }
     }
@@ -252,10 +269,10 @@ private struct PagesView: View {
     let width: Double
 
     private func offsetX() -> Double {
-        if quickButtonsSettings.bigButtons && quickButtonsSettings.twoColumns {
-            return -6
+        if quickButtonsSettings.bigButtons, quickButtonsSettings.twoColumns {
+            -6
         } else {
-            return -1
+            -1
         }
     }
 
@@ -293,12 +310,12 @@ private struct PagesView: View {
                 .ignoresSafeArea(.all, edges: edgesToIgnore())
                 .overlay(alignment: .bottom) {
                     if !isMac() {
-                        PageIndicatorView(quickButtons: quickButtons)
+                        PageIndicatorView(model: model, size: 5, quickButtons: quickButtons)
                             .offset(.init(width: offsetX(), height: 13))
                     }
                 }
                 if isMac() {
-                    PageIndicatorView(quickButtons: quickButtons)
+                    PageIndicatorView(model: model, size: 9, quickButtons: quickButtons)
                         .padding(.top, 1)
                 }
             }
@@ -338,7 +355,9 @@ struct ControlBarLandscapeView: View {
         }
         .padding(.vertical, 0)
         .frame(width: controlBarWidth(quickButtons: quickButtons))
-        .background(.black)
+        .background {
+            ControlBarBackgroundView(controlBar: model.controlBar)
+        }
         .ignoresSafeArea(.all, edges: edgesToIgnore())
     }
 }

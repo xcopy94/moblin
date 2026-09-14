@@ -112,7 +112,7 @@ private struct ObsSnapshotView: View {
             if let image = obsQuickButton.screenshot {
                 Image(image, scale: 1, label: Text(""))
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .scaledToFit()
                     .background(.black)
             } else {
                 Text("No snapshot received yet.")
@@ -144,6 +144,46 @@ private struct ObsScenesView: View {
             .labelsHidden()
         } header: {
             Text("Scenes")
+        }
+    }
+}
+
+private struct ObsSceneMediaSourceView: View {
+    let model: Model
+    @Binding var source: ObsSceneMediaSource
+
+    var body: some View {
+        NavigationLink {
+            Form {
+                Section {
+                    TextEditNavigationView(
+                        title: String(localized: "Input"),
+                        value: source.input,
+                        onSubmit: {
+                            model.setObsMediaSourceSettings(name: source.name, input: $0.trim())
+                        },
+                        placeholder: "srt://1.2.3.4:4000"
+                    )
+                }
+            }
+            .navigationTitle("\(source.name) settings")
+        } label: {
+            Text(source.name)
+        }
+    }
+}
+
+private struct ObsSceneMediaSourcesView: View {
+    let model: Model
+    @ObservedObject var obsQuickButton: QuickButtonObs
+
+    var body: some View {
+        Section {
+            ForEach($obsQuickButton.sceneMediaSources) {
+                ObsSceneMediaSourceView(model: model, source: $0)
+            }
+        } header: {
+            Text("Scene media sources")
         }
     }
 }
@@ -218,9 +258,9 @@ private struct ObsAudioSyncView: View {
     @ObservedObject var obsQuickButton: QuickButtonObs
 
     private func submitAudioDelay(value: String) -> String {
-        let offsetDouble = Double(value) ?? 0
-        var offset = Int(offsetDouble)
-        offset = offset.clamped(to: obsMinimumAudioDelay ... obsMaximumAudioDelay)
+        let offsetDouble = (Double(value) ?? 0)
+            .clamped(to: Double(obsMinimumAudioDelay) ... Double(obsMaximumAudioDelay))
+        let offset = Int(offsetDouble)
         model.setObsAudioDelay(offset: offset)
         return String(offset)
     }
@@ -276,6 +316,7 @@ private struct ObsConnectedView: View {
         ObsSnapshotView(obsQuickButton: obsQuickButton)
         ObsScenesView(model: model, obsQuickButton: obsQuickButton)
         ObsSceneAudioInputsView(model: model, obsQuickButton: obsQuickButton)
+        ObsSceneMediaSourcesView(model: model, obsQuickButton: obsQuickButton)
         if !stream.obsSourceName.isEmpty {
             ObsFixSourceView(model: model, stream: stream, obsQuickButton: obsQuickButton)
             ObsAudioSyncView(model: model, stream: stream, obsQuickButton: obsQuickButton)

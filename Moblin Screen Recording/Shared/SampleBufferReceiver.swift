@@ -37,9 +37,9 @@ protocol SampleBufferReceiverDelegate: AnyObject {
 
 private let lockQueue = DispatchQueue(label: "com.eerimoq.Moblin.SampleBufferReceiver")
 
-class SampleBufferReceiver {
+class SampleBufferReceiver: @unchecked Sendable {
     private var listenerFd: Int32 = -1
-    weak var delegate: SampleBufferReceiverDelegate?
+    weak var delegate: (any SampleBufferReceiverDelegate)?
     private var formatDescription: CMVideoFormatDescription?
     private var videoDecoder: VideoDecoder?
 
@@ -88,7 +88,7 @@ class SampleBufferReceiver {
         let config = MpegTsVideoConfigHevc(hvcC: hvcC)
         let status = config.makeFormatDescription(&formatDescription)
         if status == noErr, let formatDescription {
-            videoDecoder = VideoDecoder(lockQueue: lockQueue)
+            videoDecoder = VideoDecoder(name: "", lockQueue: lockQueue, softwareDecoding: false)
             videoDecoder!.delegate = self
             videoDecoder!.startRunning(formatDescription: formatDescription)
         }

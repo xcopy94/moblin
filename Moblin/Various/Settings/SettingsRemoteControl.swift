@@ -9,14 +9,14 @@ class SettingsRemoteControlAssistant: Codable, ObservableObject, Identifiable, N
     var relay: SettingsRemoteControlServerRelay = .init()
 
     enum CodingKeys: CodingKey {
-        case id,
-             name,
-             enabled,
-             port,
-             relay
+        case id
+        case name
+        case enabled
+        case port
+        case relay
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.id, id)
         try container.encode(.name, name)
@@ -27,7 +27,7 @@ class SettingsRemoteControlAssistant: Codable, ObservableObject, Identifiable, N
 
     init() {}
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = container.decode(.id, UUID.self, .init())
         name = container.decode(.name, String.self, Self.baseName)
@@ -37,35 +37,71 @@ class SettingsRemoteControlAssistant: Codable, ObservableObject, Identifiable, N
     }
 }
 
-class SettingsRemoteControlStreamer: Codable, ObservableObject {
-    @Published var enabled: Bool = false
+class SettingsRemoteControlStreamerUrl: Codable, Identifiable, ObservableObject {
+    var id: UUID = .init()
+    @Published var name: String = ""
     @Published var url: String = ""
-    @Published var previewFps: Float = 1.0
-    @Published var reliableChatAndEvents: Bool = false
 
     enum CodingKeys: CodingKey {
-        case enabled,
-             url,
-             previewFps,
-             reliableChatAndEvents
+        case id
+        case name
+        case url
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(.enabled, enabled)
+        try container.encode(.id, id)
+        try container.encode(.name, name)
         try container.encode(.url, url)
-        try container.encode(.previewFps, previewFps)
-        try container.encode(.reliableChatAndEvents, reliableChatAndEvents)
     }
 
     init() {}
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.decode(.id, UUID.self, .init())
+        name = container.decode(.name, String.self, "")
+        url = container.decode(.url, String.self, "")
+    }
+}
+
+class SettingsRemoteControlStreamer: Codable, ObservableObject {
+    @Published var enabled: Bool = false
+    @Published var name: String = ""
+    @Published var url: String = ""
+    @Published var previewFps: Float = 1.0
+    @Published var reliableChatAndEvents: Bool = false
+    @Published var savedUrls: [SettingsRemoteControlStreamerUrl] = []
+
+    enum CodingKeys: CodingKey {
+        case enabled
+        case name
+        case url
+        case previewFps
+        case reliableChatAndEvents
+        case savedUrls
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(.enabled, enabled)
+        try container.encode(.name, name)
+        try container.encode(.url, url)
+        try container.encode(.previewFps, previewFps)
+        try container.encode(.reliableChatAndEvents, reliableChatAndEvents)
+        try container.encode(.savedUrls, savedUrls)
+    }
+
+    init() {}
+
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         enabled = container.decode(.enabled, Bool.self, false)
+        name = container.decode(.name, String.self, "")
         url = container.decode(.url, String.self, "")
         previewFps = container.decode(.previewFps, Float.self, 1.0)
         reliableChatAndEvents = container.decode(.reliableChatAndEvents, Bool.self, false)
+        savedUrls = container.decode(.savedUrls, [SettingsRemoteControlStreamerUrl].self, [])
     }
 }
 
@@ -75,12 +111,12 @@ class SettingsRemoteControlServerRelay: Codable, ObservableObject {
     @Published var bridgeId: String = UUID().uuidString.lowercased()
 
     enum CodingKeys: CodingKey {
-        case enabled,
-             baseUrl,
-             bridgeId
+        case enabled
+        case baseUrl
+        case bridgeId
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.enabled, enabled)
         try container.encode(.baseUrl, baseUrl)
@@ -89,7 +125,7 @@ class SettingsRemoteControlServerRelay: Codable, ObservableObject {
 
     init() {}
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         enabled = container.decode(.enabled, Bool.self, false)
         baseUrl = container.decode(
@@ -103,16 +139,16 @@ class SettingsRemoteControlServerRelay: Codable, ObservableObject {
 
 class SettingsRemoteControlWeb: Codable, ObservableObject {
     @Published var enabled: Bool = false
-    @Published var port: UInt16 = 80
+    @Published var port: UInt16 = DefaultTcpPorts.remoteControlWeb
     @Published var deviceName: String = ""
 
     enum CodingKeys: CodingKey {
-        case enabled,
-             port,
-             deviceName
+        case enabled
+        case port
+        case deviceName
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.enabled, enabled)
         try container.encode(.port, port)
@@ -121,10 +157,10 @@ class SettingsRemoteControlWeb: Codable, ObservableObject {
 
     init() {}
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         enabled = container.decode(.enabled, Bool.self, false)
-        port = container.decode(.port, UInt16.self, 80)
+        port = container.decode(.port, UInt16.self, DefaultTcpPorts.remoteControlWeb)
         deviceName = container.decode(.deviceName, String.self, "")
     }
 }
@@ -139,16 +175,16 @@ class SettingsRemoteControl: Codable, ObservableObject {
     var hasMigratedAssistant: Bool = true
 
     enum CodingKeys: CodingKey {
-        case client,
-             server,
-             web,
-             password,
-             streamers,
-             selectedStreamer,
-             hasMigratedAssistant
+        case client
+        case server
+        case web
+        case password
+        case streamers
+        case selectedStreamer
+        case hasMigratedAssistant
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.client, assistant)
         try container.encode(.server, streamer)
@@ -161,7 +197,7 @@ class SettingsRemoteControl: Codable, ObservableObject {
 
     init() {}
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         assistant = container.decode(.client, SettingsRemoteControlAssistant.self, .init())
         streamer = container.decode(.server, SettingsRemoteControlStreamer.self, .init())
@@ -185,6 +221,6 @@ class SettingsRemoteControl: Codable, ObservableObject {
     }
 
     func getSelectedStreamerName() -> String? {
-        return streamers.first(where: { $0.id == selectedStreamer })?.name
+        streamers.first(where: { $0.id == selectedStreamer })?.name
     }
 }

@@ -8,8 +8,9 @@ import Network
 protocol SrtlaDelegate: AnyObject {
     func srtlaReady(port: UInt16)
     func srtlaError(message: String)
-    func moblinkStreamerDestinationAddress(address: String, port: UInt16)
     func srtlaReceivedPacket(packet: Data)
+    func moblinkStreamerDestinationAddress(address: String, port: UInt16)
+    func moblinkStreamerRestartTunnel(relayId: UUID)
 }
 
 private enum State {
@@ -28,10 +29,10 @@ class SrtlaNetworkInterfaces {
 
 let srtlaClientQueue = DispatchQueue(label: "com.eerimoq.srtla-client")
 
-class SrtlaClient: NSObject {
+class SrtlaClient: NSObject, @unchecked Sendable {
     private var remoteConnections: [RemoteConnection] = []
     private var localListener: LocalListener?
-    private weak var delegate: SrtlaDelegate?
+    private weak var delegate: (any SrtlaDelegate)?
     private let passThrough: Bool
     private var connectTimer = SimpleTimer(queue: srtlaClientQueue)
     private var state: State = .idle {
@@ -42,6 +43,7 @@ class SrtlaClient: NSObject {
 
     private let networkPathMonitor = NWPathMonitor()
     private let mpegtsPacketsPerPacket: Int
+    private let packetPadding: Bool
     private var host: String = ""
     private var port: Int = 0
     private var groupId: Data?
@@ -53,9 +55,10 @@ class SrtlaClient: NSObject {
     private let srtImplementation: SettingsStreamSrtImplementation
 
     init(
-        delegate: SrtlaDelegate,
+        delegate: any SrtlaDelegate,
         passThrough: Bool,
         mpegtsPacketsPerPacket: Int,
+        packetPadding: Bool,
         networkInterfaceNames: [SettingsNetworkInterfaceName],
         connectionPriorities: SettingsStreamSrtConnectionPriorities,
         srtImplementation: SettingsStreamSrtImplementation
@@ -63,6 +66,7 @@ class SrtlaClient: NSObject {
         self.delegate = delegate
         self.passThrough = passThrough
         self.mpegtsPacketsPerPacket = mpegtsPacketsPerPacket
+        self.packetPadding = packetPadding
         networkInterfaces = .init()
         self.connectionPriorities = .init()
         self.srtImplementation = srtImplementation
@@ -74,6 +78,7 @@ class SrtlaClient: NSObject {
             remoteConnections.append(RemoteConnection(
                 type: nil,
                 mpegtsPacketsPerPacket: mpegtsPacketsPerPacket,
+                packetPadding: packetPadding,
                 interface: nil,
                 networkInterfaces: networkInterfaces,
                 priority: 1.0
@@ -151,6 +156,7 @@ class SrtlaClient: NSObject {
             let remoteConnection = RemoteConnection(
                 type: .other,
                 mpegtsPacketsPerPacket: self.mpegtsPacketsPerPacket,
+                packetPadding: self.packetPadding,
                 interface: nil,
                 networkInterfaces: self.networkInterfaces,
                 priority: self.getRelayConnectionPriority(relayId: id),
@@ -319,6 +325,7 @@ class SrtlaClient: NSObject {
             newRemoteConnections.append(RemoteConnection(
                 type: interface.type,
                 mpegtsPacketsPerPacket: mpegtsPacketsPerPacket,
+                packetPadding: self.packetPadding,
                 interface: interface,
                 networkInterfaces: networkInterfaces,
                 priority: getConnectionPriority(name: name)
@@ -332,15 +339,15 @@ class SrtlaClient: NSObject {
         }
         remoteConnections = newRemoteConnections.sorted(by: { first, second in
             if first.type == .cellular {
-                return true
+                true
             } else if second.type == .cellular {
-                return false
+                false
             } else if first.type == .wifi {
-                return true
+                true
             } else if second.type == .wifi {
-                return false
+                false
             } else {
-                return true
+                true
             }
         })
     }
@@ -494,15 +501,22 @@ extension SrtlaClient: RemoteConnectionDelegate {
             connection.handleSrtlaAckSn(sn: sn)
         }
     }
+
+    func remoteConnectionOnMoblinkReconnect(connection: RemoteConnection) {
+        guard let relayId = connection.relayId else {
+            return
+        }
+        delegate?.moblinkStreamerRestartTunnel(relayId: relayId)
+    }
 }
 
 private func interfaceName(type: NWInterface.InterfaceType?, interface: NWInterface?) -> String {
     switch type {
     case .cellular:
-        return "Cellular"
+        "Cellular"
     case .wifi:
-        return "WiFi"
+        "WiFi"
     default:
-        return interface?.name ?? ""
+        interface?.name ?? ""
     }
 }

@@ -35,7 +35,6 @@ private struct CollapsedBondingView: View {
 
 private struct BondingStatusView: View {
     @EnvironmentObject var model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var bonding: Bonding
     let textPlacement: StreamOverlayIconAndTextPlacement
@@ -69,9 +68,7 @@ private struct BondingStatusView: View {
 
 private struct ReplayStatusView: View {
     @EnvironmentObject var model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
-    // periphery:ignore
     @ObservedObject var replay: SettingsStreamReplay
     let textPlacement: StreamOverlayIconAndTextPlacement
 
@@ -187,7 +184,6 @@ private struct CollapsedBitrateView: View {
 
 private struct BitrateStatusView: View {
     let model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var bitrate: Bitrate
     let textPlacement: StreamOverlayIconAndTextPlacement
@@ -209,24 +205,24 @@ private struct BitrateStatusView: View {
     }
 }
 
+@MainActor
 private func netStreamColor(model: Model) -> Color {
     if model.isStreaming() {
         switch model.streamState {
         case .connecting:
-            return .white
+            .white
         case .connected:
-            return .white
+            .white
         case .disconnected:
-            return .red
+            .red
         }
     } else {
-        return .white
+        .white
     }
 }
 
 private struct StreamUptimeStatusView: View {
     @EnvironmentObject var model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var streamUptime: StreamUptimeProvider
     let textPlacement: StreamOverlayIconAndTextPlacement
@@ -245,7 +241,6 @@ private struct StreamUptimeStatusView: View {
 
 private struct CpuStatusView: View {
     let model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var systemMonitor: SystemMonitor
     let textPlacement: StreamOverlayIconAndTextPlacement
@@ -301,17 +296,14 @@ private struct HypeTrainStatusView: View {
 
 private struct MoblinkStatusView: View {
     let model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var moblink: Moblink
-    // periphery:ignore
     @ObservedObject var streamer: SettingsMoblinkStreamer
-    // periphery:ignore
     @ObservedObject var relay: SettingsMoblinkRelay
     let textPlacement: StreamOverlayIconAndTextPlacement
 
     private func color() -> Color {
-        if model.isMoblinkRelayConfigured() && !model.areMoblinkRelaysOk() {
+        if model.isMoblinkRelayConfigured(), !model.areMoblinkRelaysOk() {
             return .red
         }
         if !moblink.streamerOk {
@@ -334,22 +326,18 @@ private struct MoblinkStatusView: View {
 
 private struct RemoteControlStatusView: View {
     let model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var status: StatusTopRight
-    // periphery:ignore
     @ObservedObject var streamer: SettingsRemoteControlStreamer
-    // periphery:ignore
     @ObservedObject var assistant: SettingsRemoteControlAssistant
     let textPlacement: StreamOverlayIconAndTextPlacement
 
     private func remoteControlColor() -> Color {
-        if model.isRemoteControlStreamerConfigured() && !model.isRemoteControlStreamerConnected() {
-            return .red
-        } else if model.isRemoteControlAssistantConfigured() && !model.isRemoteControlAssistantConnected() {
-            return .red
+        if status.remoteControlOk {
+            .white
+        } else {
+            .red
         }
-        return .white
     }
 
     var body: some View {
@@ -366,7 +354,6 @@ private struct RemoteControlStatusView: View {
 
 private struct DjiDevicesStatusView: View {
     let model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var status: StatusTopRight
     let textPlacement: StreamOverlayIconAndTextPlacement
@@ -385,7 +372,6 @@ private struct DjiDevicesStatusView: View {
 
 private struct GameControllersStatusView: View {
     let model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var status: StatusTopRight
     let textPlacement: StreamOverlayIconAndTextPlacement
@@ -403,12 +389,9 @@ private struct GameControllersStatusView: View {
 
 private struct IngestsStatusView: View {
     let model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var ingests: Ingests
-    // periphery:ignore
     @ObservedObject var rtmpServer: SettingsRtmpServer
-    // periphery:ignore
     @ObservedObject var srtlaServer: SettingsSrtlaServer
     let textPlacement: StreamOverlayIconAndTextPlacement
 
@@ -425,9 +408,7 @@ private struct IngestsStatusView: View {
 
 private struct LocationStatusView: View {
     @EnvironmentObject var model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
-    // periphery:ignore
     @ObservedObject var location: SettingsLocation
     @ObservedObject var status: StatusTopRight
     let textPlacement: StreamOverlayIconAndTextPlacement
@@ -445,7 +426,6 @@ private struct LocationStatusView: View {
 
 private struct RecordingStatusView: View {
     @EnvironmentObject var model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var recording: RecordingProvider
     let textPlacement: StreamOverlayIconAndTextPlacement
@@ -463,7 +443,6 @@ private struct RecordingStatusView: View {
 
 private struct BrowserWidgetsStatusView: View {
     @EnvironmentObject var model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var status: StatusTopRight
     let textPlacement: StreamOverlayIconAndTextPlacement
@@ -481,13 +460,12 @@ private struct BrowserWidgetsStatusView: View {
 
 private struct CatPrinterStatusView: View {
     @EnvironmentObject var model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var status: StatusTopRight
     let textPlacement: StreamOverlayIconAndTextPlacement
 
     private func catPrinterColor() -> Color {
-        if model.isAnyCatPrinterConfigured() && !model.areAllCatPrintersConnected() {
+        if model.isAnyCatPrinterConfigured(), !model.areAllCatPrintersConnected() {
             return .red
         }
         return .white
@@ -507,13 +485,12 @@ private struct CatPrinterStatusView: View {
 
 private struct WorkoutDeviceStatusView: View {
     @EnvironmentObject var model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var status: StatusTopRight
     let textPlacement: StreamOverlayIconAndTextPlacement
 
     private func workoutDeviceColor() -> Color {
-        if model.isAnyWorkoutDeviceConfigured() && !model.areAllWorkoutDevicesConnected() {
+        if model.isAnyWorkoutDeviceConfigured(), !model.areAllWorkoutDevicesConnected() {
             return .red
         }
         return .white
@@ -533,7 +510,6 @@ private struct WorkoutDeviceStatusView: View {
 
 private struct FixedHorizonStatusView: View {
     let model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var status: StatusTopRight
     let textPlacement: StreamOverlayIconAndTextPlacement
@@ -550,7 +526,6 @@ private struct FixedHorizonStatusView: View {
 }
 
 private struct BlackSharkCoolerDeviceStatusView: View {
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var status: StatusTopRight
     let textPlacement: StreamOverlayIconAndTextPlacement
@@ -601,7 +576,6 @@ private struct AutoSceneSwitcherStatusView: View {
 private struct StatusesView: View {
     @EnvironmentObject var model: Model
     @ObservedObject var show: SettingsShow
-    // periphery:ignore
     @ObservedObject var status: StatusTopRight
     let textPlacement: StreamOverlayIconAndTextPlacement
 
@@ -696,7 +670,7 @@ private struct StatusesView: View {
                       show: model.database.show,
                       systemMonitor: model.systemMonitor,
                       textPlacement: textPlacement)
-        if show.audioLevel, textPlacement == .hide {
+        if model.isShowingStatusAudioLevel(), textPlacement == .hide {
             CompactAudioBarView(level: model.audio.level)
         }
     }
@@ -708,7 +682,7 @@ private struct AudioView: View {
     @ObservedObject var show: SettingsShow
 
     var body: some View {
-        if show.audioLevel {
+        if model.isShowingStatusAudioLevel() {
             AudioLevelView(model: model, big: database.bigAudioLevelMeter)
                 .padding(20)
                 .contentShape(Rectangle())
@@ -776,8 +750,11 @@ private struct RightOverlayBottomVerticalView: View {
                                                                     camera: model.camera,
                                                                     show: model.camera.show)
                     }
+                    if streamOverlay.isTorchOn, !streamOverlay.isFrontCameraSelected {
+                        StreamOverlayRightTorchView(model: model, database: database)
+                    }
                 }
-                if show.zoomPresets && zoom.hasZoom {
+                if show.zoomPresets, zoom.hasZoom {
                     StreamOverlayRightZoomPresetVSelctorView(model: model,
                                                              zoom: zoom,
                                                              width: width)
@@ -817,7 +794,10 @@ private struct RightOverlayBottomHorizontalView: View {
                                                             camera: model.camera,
                                                             show: model.camera.show)
             }
-            if show.zoomPresets && zoom.hasZoom {
+            if streamOverlay.isTorchOn, !streamOverlay.isFrontCameraSelected {
+                StreamOverlayRightTorchView(model: model, database: database)
+            }
+            if show.zoomPresets, zoom.hasZoom {
                 StreamOverlayRightZoomPresetSelctorView(model: model,
                                                         zoom: zoom,
                                                         width: width)
@@ -840,7 +820,7 @@ struct RightOverlayBottomView: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 1) {
             Spacer()
-            if !model.showDrawOnStream {
+            if !model.showDrawOnStream, database.appMode == .streaming {
                 if streamOverlay.showingReplay {
                     StreamOverlayRightReplayView(model: model,
                                                  replay: model.replay,
@@ -848,7 +828,7 @@ struct RightOverlayBottomView: View {
                 } else if streamOverlay.showingBeauty {
                     StreamOverlayRightBeautyView(model: model, beauty: database.beauty)
                 } else if streamOverlay.showingVideoPreview {
-                    if show.zoomPresets && zoom.hasZoom {
+                    if show.zoomPresets, zoom.hasZoom {
                         StreamOverlayRightZoomPresetSelctorView(model: model,
                                                                 zoom: zoom,
                                                                 width: width)

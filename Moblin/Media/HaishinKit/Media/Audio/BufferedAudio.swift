@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Collections
 
 private let deltaLimit = 0.03
@@ -23,18 +23,27 @@ class BufferedAudio {
     private let driftTracker: DriftTracker
     private var isInitialBuffering = true
     private var isSyncingWithOutput = true
-    weak var delegate: BufferedAudioSampleBufferDelegate?
+    weak var delegate: (any BufferedAudioSampleBufferDelegate)?
     private var hasBufferBeenAppended = false
     let latency: Double
     private var stats = BufferedStats()
     private let manualOutput: Bool
+    private let trackDrift: Bool
 
-    init(cameraId: UUID, name: String, latency: Double, processor: Processor?, manualOutput: Bool) {
+    init(
+        cameraId: UUID,
+        name: String,
+        latency: Double,
+        processor: Processor?,
+        manualOutput: Bool,
+        trackDrift: Bool
+    ) {
         self.cameraId = cameraId
         self.name = name
         self.latency = latency
         self.processor = processor
         self.manualOutput = manualOutput
+        self.trackDrift = trackDrift
         if manualOutput {
             isOutputting = true
         }
@@ -42,7 +51,7 @@ class BufferedAudio {
     }
 
     func numberOfBuffers() -> Int {
-        return sampleBuffers.count
+        sampleBuffers.count
     }
 
     func setTargetLatency(latency: Double) {
@@ -104,7 +113,7 @@ class BufferedAudio {
         }
         if !isInitialBuffering, hasBufferBeenAppended, !manualOutput {
             hasBufferBeenAppended = false
-            if let drift = driftTracker.update(outputPresentationTimeStamp, sampleBuffers) {
+            if trackDrift, let drift = driftTracker.update(outputPresentationTimeStamp, sampleBuffers) {
                 processor?.setBufferedVideoDrift(cameraId: cameraId, drift: drift)
             }
         }
@@ -152,16 +161,16 @@ class BufferedAudio {
                                _ drift: Double) -> Bool
     {
         if isSyncingWithOutput {
-            return hasBestBufferSynching(nextSampleBuffer,
-                                         candidateSampleBuffer,
-                                         outputPresentationTimeStamp,
-                                         drift)
+            hasBestBufferSynching(nextSampleBuffer,
+                                  candidateSampleBuffer,
+                                  outputPresentationTimeStamp,
+                                  drift)
         } else if let candidateSampleBuffer {
-            return hasBestBufferNormal(candidateSampleBuffer,
-                                       outputPresentationTimeStamp,
-                                       drift)
+            hasBestBufferNormal(candidateSampleBuffer,
+                                outputPresentationTimeStamp,
+                                drift)
         } else {
-            return false
+            false
         }
     }
 
@@ -218,7 +227,7 @@ class BufferedAudio {
     }
 
     private func makePresentationTimeStamp() -> CMTime {
-        return CMTime(
+        CMTime(
             value: Int64(frameLength * Double(outputCounter)),
             timescale: CMTimeScale(sampleRate)
         ) + startPresentationTimeStamp

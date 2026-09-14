@@ -7,6 +7,9 @@ class RecordingProvider: ObservableObject {
 
 extension Model {
     func startRecording() {
+        guard !isChatPhone() else {
+            return
+        }
         setIsRecording(value: true)
         if !resumeRecording() {
             if stream.recording.isDefaultRecordingPath() {
@@ -105,8 +108,8 @@ extension Model {
     func setIsRecording(value: Bool) {
         isRecording = value
         updateLiveActivity()
+        updateMacStatusItem()
         setQuickButton(type: .record, isOn: value)
-        updateQuickButtonStates()
         updatePictureInPicture()
         if isWatchLocal() {
             sendIsRecordingToWatch(isRecording: isRecording)
@@ -119,6 +122,6 @@ extension Model {
     }
 
     func isShowingStatusRecording() -> Bool {
-        return isRecording
+        isRecording
     }
 }

@@ -6,7 +6,8 @@ protocol MpegTsReaderDelegate: AnyObject {
     func mpegTsReaderSetTargetLatencies(_ videoTargetLatency: Double, _ audioTargetLatency: Double)
 }
 
-class MpegTsReader {
+class MpegTsReader: @unchecked Sendable {
+    private let name: String
     private var programAssociationTable = MpegTsProgramAssociation()
     private var programMappingTable: [UInt16: MpegTsProgramMapping] = [:]
     private var programs: [UInt16: UInt16] = [:]
@@ -25,15 +26,25 @@ class MpegTsReader {
     private var videoDecoder: VideoDecoder?
     private let targetLatenciesSynchronizer: TargetLatenciesSynchronizer
     private let timecodesEnabled: Bool
+    private let softwareDecoding: Bool
     private let targetLatency: Double
-    weak var delegate: MpegTsReaderDelegate?
+    weak var delegate: (any MpegTsReaderDelegate)?
     private let decoderQueue: DispatchQueue
-    private let wrappingTimestamp = WrappingTimestamp(name: "MpegTsReader",
-                                                      maximumTimestamp: CMTime(seconds: 0x2_0000_0000))
+    private let wrappingTimestamp = WrappingTimestamp(
+        name: "MpegTsReader",
+        maximumTimestamp: CMTime(value: 0x2_0000_0000, timescale: CMTimeScale(TSTimestamp.resolution))
+    )
 
-    init(decoderQueue: DispatchQueue, timecodesEnabled: Bool, targetLatency: Double) {
+    init(name: String,
+         decoderQueue: DispatchQueue,
+         timecodesEnabled: Bool,
+         softwareDecoding: Bool,
+         targetLatency: Double)
+    {
+        self.name = name
         self.decoderQueue = decoderQueue
         self.timecodesEnabled = timecodesEnabled
+        self.softwareDecoding = softwareDecoding
         self.targetLatency = targetLatency
         targetLatenciesSynchronizer = TargetLatenciesSynchronizer(targetLatency: targetLatency)
     }
@@ -50,6 +61,7 @@ class MpegTsReader {
                 try handleProgramMedia(packet: packet, data: data)
             }
         }
+        updateTargetLatencies()
     }
 
     private func handleProgramAssociationTable(packet: MpegTsPacket) throws {
@@ -70,9 +82,7 @@ class MpegTsReader {
 
     private func handleProgramMedia(packet: MpegTsPacket, data: ElementaryStreamSpecificData) throws {
         if packet.payloadUnitStartIndicator {
-            if let (isAudio, sampleBuffer) = tryMakeSampleBuffer(packetId: packet.id, data: data) {
-                handleSampleBuffer(isAudio, sampleBuffer)
-            }
+            tryMakeSampleBuffers(packetId: packet.id, data: data)
             packetizedElementaryStreams[packet.id] = try MpegTsPacketizedElementaryStream(data: packet
                 .payload)
         } else {
@@ -80,18 +90,9 @@ class MpegTsReader {
         }
     }
 
-    private func handleSampleBuffer(_ isAudio: Bool, _ sampleBuffer: CMSampleBuffer) {
-        if isAudio {
-            handleAudioSampleBuffer(sampleBuffer)
-        } else {
-            handleVideoSampleBuffer(sampleBuffer)
-        }
-    }
-
     private func handleAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
         targetLatenciesSynchronizer
             .setLatestAudioPresentationTimeStamp(sampleBuffer.presentationTimeStamp.seconds)
-        updateTargetLatencies()
         guard let audioDecoder, let pcmAudioFormat, let audioBuffer, let pcmAudioBuffer else {
             return
         }
@@ -172,13 +173,16 @@ class MpegTsReader {
     {
         let ptsDelta = (presentationTimeStamp - latestPresentationTimeStamp).seconds
         let timePerBuffer = Double(samplesPerBuffer) / sampleFrequency
-        return max(Int((ptsDelta / timePerBuffer - 1).rounded()), 0)
+        let numberOfGapBuffers = (ptsDelta / timePerBuffer - 1).rounded()
+        guard numberOfGapBuffers.isFinite else {
+            return 0
+        }
+        return max(Int(numberOfGapBuffers), 0)
     }
 
     private func handleVideoSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
         targetLatenciesSynchronizer
             .setLatestVideoPresentationTimeStamp(sampleBuffer.presentationTimeStamp.seconds)
-        updateTargetLatencies()
         guard let videoDecoder else {
             return
         }
@@ -225,31 +229,31 @@ class MpegTsReader {
         let dimensions = CMVideoFormatDescriptionGetDimensions(formatDescription)
         logger.info("mpeg-ts-reader: Got new video dimensions \(dimensions)")
         videoDecoder?.stopRunning()
-        videoDecoder = VideoDecoder(lockQueue: decoderQueue)
+        videoDecoder = VideoDecoder(name: name,
+                                    lockQueue: decoderQueue,
+                                    softwareDecoding: softwareDecoding)
         videoDecoder?.delegate = self
         videoDecoder?.startRunning(formatDescription: formatDescription)
     }
 
-    private func tryMakeSampleBuffer(packetId: UInt16,
-                                     data: ElementaryStreamSpecificData) -> (Bool, CMSampleBuffer)?
-    {
+    private func tryMakeSampleBuffers(packetId: UInt16, data: ElementaryStreamSpecificData) {
         guard var packetizedElementaryStream = packetizedElementaryStreams[packetId] else {
-            return nil
+            return
         }
         defer {
             packetizedElementaryStreams[packetId] = nil
         }
         switch data.streamType {
         case .mpeg2PacketizedData:
-            return makeSampleBufferMpeg2PacketizedData(packetId, data, &packetizedElementaryStream)
+            makeSampleBufferMpeg2PacketizedData(packetId, data, &packetizedElementaryStream)
         case .adtsAac:
-            return makeSampleBufferAac(packetId, &packetizedElementaryStream)
+            makeSampleBufferAac(packetId, &packetizedElementaryStream)
         case .h264:
-            return makeSampleBufferH264(packetId, &packetizedElementaryStream)
+            makeSampleBufferH264(packetId, &packetizedElementaryStream)
         case .h265:
-            return makeSampleBufferH265(packetId, &packetizedElementaryStream)
+            makeSampleBufferH265(packetId, &packetizedElementaryStream)
         default:
-            return nil
+            break
         }
     }
 
@@ -257,12 +261,12 @@ class MpegTsReader {
         _ packetId: UInt16,
         _ data: ElementaryStreamSpecificData,
         _ packetizedElementaryStream: inout MpegTsPacketizedElementaryStream
-    ) -> (Bool, CMSampleBuffer)? {
+    ) {
         switch data.getDescriptor(tag: .registration) {
         case ElementaryStreamDescriptiorRegistration.opus:
-            return makeSampleBufferMpeg2PacketizedDataOpus(packetId, data, &packetizedElementaryStream)
+            makeSampleBufferMpeg2PacketizedDataOpus(packetId, data, &packetizedElementaryStream)
         default:
-            return nil
+            break
         }
     }
 
@@ -314,25 +318,27 @@ class MpegTsReader {
         _ packetId: UInt16,
         _ data: ElementaryStreamSpecificData,
         _ packetizedElementaryStream: inout MpegTsPacketizedElementaryStream
-    ) -> (Bool, CMSampleBuffer)? {
+    ) {
         guard let formatDescription = getOpusFormatDescription(packetId, data) else {
-            return nil
+            return
         }
         guard let (length, payloadOffset) = OpusHeader.decode(data: packetizedElementaryStream.data) else {
-            return nil
+            return
         }
         let blockBuffer = packetizedElementaryStream.data.makeBlockBuffer(advancedBy: payloadOffset)
         var sampleSizes = [length]
+        let optionalHeader = packetizedElementaryStream.optionalHeader
         guard let sampleBuffer = makeSampleBuffer(
             packetId,
-            packetizedElementaryStream.optionalHeader,
+            optionalHeader.getPresentationTimeStamp(),
+            optionalHeader.getDecodeTimeStamp(),
             formatDescription,
             blockBuffer,
             &sampleSizes
         ) else {
-            return nil
+            return
         }
-        return (true, sampleBuffer)
+        handleAudioSampleBuffer(sampleBuffer)
     }
 
     private func getAacFormatDescription(
@@ -357,36 +363,42 @@ class MpegTsReader {
     private func makeSampleBufferAac(
         _ packetId: UInt16,
         _ packetizedElementaryStream: inout MpegTsPacketizedElementaryStream
-    ) -> (Bool, CMSampleBuffer)? {
-        guard let formatDescription = getAacFormatDescription(packetId, packetizedElementaryStream) else {
-            return nil
+    ) {
+        guard let formatDescription = getAacFormatDescription(packetId, packetizedElementaryStream),
+              let sampleRate = formatDescription.audioStreamBasicDescription?.mSampleRate
+        else {
+            return
         }
-        var sampleSizes: [Int] = []
-        let blockBuffer = packetizedElementaryStream.data.makeBlockBuffer(advancedBy: AdtsHeader.size)
         let reader = ADTSReader(data: packetizedElementaryStream.data)
         var iterator = reader.makeIterator()
+        var offset = 0.0
+        var dataOffset = AdtsHeader.size
+        let optionalHeader = packetizedElementaryStream.optionalHeader
         while let dataLength = iterator.next() {
-            sampleSizes.append(dataLength)
+            let delta = CMTime(seconds: offset, preferredTimescale: CMTimeScale(TSTimestamp.resolution))
+            let blockBuffer = packetizedElementaryStream.data.makeBlockBuffer(advancedBy: dataOffset,
+                                                                              length: dataLength)
+            var sampleSizes = [dataLength]
+            guard let sampleBuffer = makeSampleBuffer(
+                packetId,
+                optionalHeader.getPresentationTimeStamp() + delta,
+                optionalHeader.getDecodeTimeStamp() + delta,
+                formatDescription,
+                blockBuffer,
+                &sampleSizes
+            ) else {
+                return
+            }
+            offset += 1024 / sampleRate
+            dataOffset += dataLength + AdtsHeader.size
+            handleAudioSampleBuffer(sampleBuffer)
         }
-        guard !sampleSizes.isEmpty else {
-            return nil
-        }
-        guard let sampleBuffer = makeSampleBuffer(
-            packetId,
-            packetizedElementaryStream.optionalHeader,
-            formatDescription,
-            blockBuffer,
-            &sampleSizes
-        ) else {
-            return nil
-        }
-        return (true, sampleBuffer)
     }
 
     private func makeSampleBufferH264(
         _ packetId: UInt16,
         _ packetizedElementaryStream: inout MpegTsPacketizedElementaryStream
-    ) -> (Bool, CMSampleBuffer)? {
+    ) {
         let nalUnits = getNalUnits(data: packetizedElementaryStream.data)
         let units = readH264NalUnits(data: packetizedElementaryStream.data,
                                      nalUnits: nalUnits,
@@ -399,23 +411,25 @@ class MpegTsReader {
         removeNalUnitStartCodes(&packetizedElementaryStream.data, nalUnits)
         let blockBuffer = packetizedElementaryStream.data.makeBlockBuffer()
         var sampleSizes = [blockBuffer?.dataLength ?? 0]
+        let optionalHeader = packetizedElementaryStream.optionalHeader
         guard let sampleBuffer = makeSampleBuffer(
             packetId,
-            packetizedElementaryStream.optionalHeader,
+            optionalHeader.getPresentationTimeStamp(),
+            optionalHeader.getDecodeTimeStamp(),
             formatDescriptions[packetId],
             blockBuffer,
             &sampleSizes
         ) else {
-            return nil
+            return
         }
         sampleBuffer.setIsSync(units.contains { $0.header.type == .idr })
-        return (false, sampleBuffer)
+        handleVideoSampleBuffer(sampleBuffer)
     }
 
     private func makeSampleBufferH265(
         _ packetId: UInt16,
         _ packetizedElementaryStream: inout MpegTsPacketizedElementaryStream
-    ) -> (Bool, CMSampleBuffer)? {
+    ) {
         let nalUnits = getNalUnits(data: packetizedElementaryStream.data)
         let units = readH265NalUnits(data: packetizedElementaryStream.data,
                                      nalUnits: nalUnits,
@@ -442,31 +456,33 @@ class MpegTsReader {
         removeNalUnitStartCodes(&packetizedElementaryStream.data, nalUnits)
         let blockBuffer = packetizedElementaryStream.data.makeBlockBuffer()
         var sampleSizes = [blockBuffer?.dataLength ?? 0]
+        let optionalHeader = packetizedElementaryStream.optionalHeader
         guard let sampleBuffer = makeSampleBuffer(
             packetId,
-            packetizedElementaryStream.optionalHeader,
+            optionalHeader.getPresentationTimeStamp(),
+            optionalHeader.getDecodeTimeStamp(),
             formatDescriptions[packetId],
             blockBuffer,
             &sampleSizes
         ) else {
-            return nil
+            return
         }
         sampleBuffer.setIsSync(units.contains { $0.header.type == .sps })
-        return (false, sampleBuffer)
+        handleVideoSampleBuffer(sampleBuffer)
     }
 
     private func makeSampleBuffer(
         _ packetId: UInt16,
-        _ optionalHeader: OptionalHeader,
+        _ presentationTimeStamp: CMTime,
+        _ decodeTimeStamp: CMTime,
         _ formatDescription: CMFormatDescription?,
         _ blockBuffer: CMBlockBuffer?,
         _ sampleSizes: inout [Int]
     ) -> CMSampleBuffer? {
         var sampleBuffer: CMSampleBuffer?
         let basePresentationTimeStamp = getBasePresentationTimeStamp()
-        let receivedPresentationTimeStamp = wrappingTimestamp
-            .update(optionalHeader.getPresentationTimeStamp())
-        let receivedDecodeTimeStamp = wrappingTimestamp.update(optionalHeader.getDecodeTimeStamp())
+        let receivedPresentationTimeStamp = wrappingTimestamp.update(presentationTimeStamp)
+        let receivedDecodeTimeStamp = wrappingTimestamp.update(decodeTimeStamp)
         var timing = CMSampleTimingInfo()
         var firstReceivedPresentationTimeStamp = firstReceivedPresentationTimeStamp
         if let firstReceivedPresentationTimeStamp {

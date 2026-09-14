@@ -4,6 +4,7 @@ struct WidgetMapSettingsView: View {
     @EnvironmentObject var model: Model
     let widget: SettingsWidget
     @State var delay: Double
+    @State var size: Double
 
     var body: some View {
         Section {
@@ -22,10 +23,29 @@ struct WidgetMapSettingsView: View {
             NavigationLink {
                 LocationSettingsView(database: model.database,
                                      location: model.database.location,
+                                     locationManager: model.locationManager,
                                      stream: $model.stream)
             } label: {
                 Label("Location", systemImage: "location")
             }
+        }
+        Section {
+            HStack {
+                Slider(
+                    value: $size,
+                    in: 500 ... 10000,
+                    step: 100,
+                    onEditingChanged: { begin in
+                        guard !begin else {
+                            return
+                        }
+                        widget.map.size = size
+                        model.resetSelectedScene(changeScene: false)
+                    }
+                )
+            }
+        } header: {
+            Text("Size")
         }
         Section {
             HStack {

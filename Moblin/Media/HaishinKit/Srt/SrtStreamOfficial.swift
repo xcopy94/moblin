@@ -19,13 +19,13 @@ private class SendHook {
     }
 }
 
-class SrtStreamOfficial {
+class SrtStreamOfficial: @unchecked Sendable {
     private let writer: MpegTsWriter
     private var sendHook = SendHook(closure: nil)
     private var options: [SrtSocketOption: String] = [:]
     private var perf = CBytePerfMon()
     private var socket: SRTSOCKET = SRT_INVALID_SOCK
-    weak var srtStreamDelegate: SrtStreamOfficialDelegate?
+    weak var srtStreamDelegate: (any SrtStreamOfficialDelegate)?
     private let processor: Processor
 
     private var readyState: ReadyState = .initialized {
@@ -37,23 +37,27 @@ class SrtStreamOfficial {
             switch oldValue {
             case .publishing:
                 logger.info("srt: Stop publishing")
-                writer.stopRunning()
-                processor.stopEncoding(writer)
+                processorPipelineQueue.async {
+                    self.writer.stopRunning()
+                    self.processor.stopEncoding(self.writer)
+                }
             default:
                 break
             }
             switch readyState {
             case .publishing:
                 logger.info("srt: Start publishing")
-                processor.startEncoding(writer)
-                writer.startRunning()
+                processorPipelineQueue.async {
+                    self.processor.startEncoding(self.writer)
+                    self.writer.startRunning()
+                }
             default:
                 break
             }
         }
     }
 
-    init(processor: Processor, timecodesEnabled: Bool, delegate: SrtStreamOfficialDelegate) {
+    init(processor: Processor, timecodesEnabled: Bool, delegate: any SrtStreamOfficialDelegate) {
         self.processor = processor
         writer = MpegTsWriter(timecodesEnabled: timecodesEnabled, newSrt: false)
         srtStreamDelegate = delegate
@@ -71,7 +75,9 @@ class SrtStreamOfficial {
         }
         self.sendHook = SendHook(closure: sendHook)
         socket = SRT_INVALID_SOCK
-        try connect(sockaddrIn(host, port: UInt16(clamping: port)), SrtSocketOption.from(uri: uri))
+        var options = SrtSocketOption.from(uri: uri)
+        options[.sndsyn] = "0"
+        try connect(sockaddrIn(host, port: UInt16(clamping: port)), options)
     }
 
     func close() {
@@ -116,10 +122,7 @@ class SrtStreamOfficial {
     private func sockaddrIn(_ host: String, port: UInt16) -> sockaddr_in {
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = CFSwapInt16BigToHost(port)
-        if inet_pton(AF_INET, host, &addr.sin_addr) == 1 {
-            return addr
-        }
+        addr.sin_port = in_port_t(bigEndian: port)
         guard let hostent = gethostbyname(host), hostent.pointee.h_addrtype == AF_INET else {
             return addr
         }

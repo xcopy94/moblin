@@ -70,7 +70,7 @@ struct WidgetScoreboardModularSettingsView: View {
         guard let maximum = Int(value) else {
             return ""
         }
-        return formatFullDuration(seconds: 60 * maximum)
+        return formatShortDuration(seconds: 60 * maximum)
     }
 
     var body: some View {
@@ -153,6 +153,11 @@ struct WidgetScoreboardModularGeneralSettingsView: View {
                         }
                     Toggle("Info box", isOn: $modular.showGlobalStatsBlock)
                         .onChange(of: modular.showGlobalStatsBlock) { _ in
+                            updated()
+                        }
+                    Toggle("Clock", isOn: $modular.showClock)
+                        .disabled(!modular.showGlobalStatsBlock)
+                        .onChange(of: modular.showClock) { _ in
                             updated()
                         }
                     Toggle("Bold", isOn: $modular.isBold)

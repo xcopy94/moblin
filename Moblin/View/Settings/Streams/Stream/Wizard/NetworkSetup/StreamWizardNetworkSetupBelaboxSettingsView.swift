@@ -6,7 +6,7 @@ struct StreamWizardNetworkSetupBelaboxSettingsView: View {
     @State var urlError = ""
 
     private func nextDisabled() -> Bool {
-        return createStreamWizard.belaboxUrl.trim().isEmpty || !urlError.isEmpty
+        createStreamWizard.belaboxUrl.trim().isEmpty || !urlError.isEmpty
     }
 
     private func updateUrlError() {
@@ -42,7 +42,7 @@ struct StreamWizardNetworkSetupBelaboxSettingsView: View {
                     HCenter {
                         Image("BelaboxCloudIngest")
                             .resizable()
-                            .aspectRatio(contentMode: .fit)
+                            .scaledToFit()
                             .frame(maxWidth: 400)
                     }
                 }

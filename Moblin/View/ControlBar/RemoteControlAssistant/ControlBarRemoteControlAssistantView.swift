@@ -28,9 +28,9 @@ private struct RemoteControlSrtConnectionPriorityView: View {
         if let name = model.database.networkInterfaceNames.first(where: { interface in
             interface.interfaceName == priority.name
         })?.name, !name.isEmpty {
-            return name
+            name
         } else {
-            return priority.name
+            priority.name
         }
     }
 
@@ -100,10 +100,6 @@ private struct RemoteControlAudioLevelView: View {
     var level: Float
     var channels: Int?
     private let barsPerDb: Float = 0.3
-    private let clippingThresholdDb: Float = -1.0
-    private let redThresholdDb: Float = -8.5
-    private let yellowThresholdDb: Float = -20
-    private let zeroThresholdDb: Float = -60
 
     // Approx 60 * 0.3 = 20
     private let maxBars = "||||||||||||||||||||"
@@ -114,7 +110,7 @@ private struct RemoteControlAudioLevelView: View {
     }
 
     private func isClipping() -> Bool {
-        return level > clippingThresholdDb
+        level > clippingThresholdDb
     }
 
     private func clippingText() -> Substring {
@@ -227,7 +223,7 @@ private struct ControlBarRemoteControlAssistantStatusView: View {
                 if let preview = remoteControl.preview {
                     Image(uiImage: preview)
                         .resizable()
-                        .aspectRatio(contentMode: .fit)
+                        .scaledToFit()
                         .frame(maxWidth: .infinity)
                         .padding(.bottom, 3)
                         .onTapGesture(count: 2) { _ in
@@ -345,7 +341,7 @@ private struct LiveView: View {
         ))
         .confirmationDialog("", isPresented: $presentingConfirm) {
             Button(pendingStreaming ? "Go Live" : "End") {
-                model.remoteControlAssistantSetStream(on: pendingStreaming)
+                model.remoteControlAssistantSetLive(on: pendingStreaming)
                 remoteControl.streaming = pendingStreaming
             }
         }
@@ -393,12 +389,44 @@ private struct MutedView: View {
     }
 }
 
+private struct PreviewStreamView: View {
+    let model: Model
+    @ObservedObject var remoteControl: RemoteControl
+
+    var body: some View {
+        Toggle("Preview stream", isOn: $remoteControl.previewStream)
+            .onChange(of: remoteControl.previewStream) {
+                guard remoteControl.previewStream != model.remoteControlAssistantStreamerState.previewStream
+                else {
+                    return
+                }
+                model.remoteControlAssistantSetPreviewStream(on: $0)
+            }
+    }
+}
+
+private struct StealthModeControlView: View {
+    let model: Model
+    @ObservedObject var remoteControl: RemoteControl
+
+    var body: some View {
+        Toggle("Stealth mode", isOn: $remoteControl.stealthMode)
+            .onChange(of: remoteControl.stealthMode) {
+                guard remoteControl.stealthMode != model.remoteControlAssistantStreamerState.stealthMode
+                else {
+                    return
+                }
+                model.remoteControlAssistantSetStealthMode(on: $0)
+            }
+    }
+}
+
 private struct ZoomView: View {
     let model: Model
     @ObservedObject var remoteControl: RemoteControl
 
     private func submitZoom(value: String) {
-        guard let x = Float(value) else {
+        guard let x = Float(value), x.isFinite else {
             if let zoom = model.remoteControlAssistantStreamerState.zoom {
                 remoteControl.zoom = String(zoom)
             }
@@ -539,8 +567,8 @@ private struct GimbalPresetView: View {
         NavigationLink {
             Form {
                 Section {
-                    if let presets = remoteControl.settings?.gimbalPresets, !presets.isEmpty {
-                        ForEach(presets) { preset in
+                    if !remoteControl.gimbalPresets.isEmpty {
+                        ForEach(remoteControl.gimbalPresets) { preset in
                             TextButtonView(title: preset.name) {
                                 model.remoteControlAssistantMoveToGimbalPreset(id: preset.id)
                             }
@@ -555,6 +583,60 @@ private struct GimbalPresetView: View {
             .navigationTitle("Gimbal presets")
         } label: {
             Text("Gimbal presets")
+        }
+    }
+}
+
+private struct MacroView: View {
+    let model: Model
+    let macro: RemoteControlMacro
+
+    var body: some View {
+        HStack {
+            Text(macro.name)
+            Spacer()
+            if macro.running {
+                Button {
+                    model.remoteControlAssistantStopMacro(id: macro.id)
+                } label: {
+                    Text("Cancel")
+                }
+                .tint(.red)
+                .buttonStyle(.borderless)
+            } else {
+                Button {
+                    model.remoteControlAssistantStartMacro(id: macro.id)
+                } label: {
+                    Text("Run")
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+    }
+}
+
+private struct MacrosView: View {
+    let model: Model
+    @ObservedObject var remoteControl: RemoteControl
+
+    var body: some View {
+        NavigationLink {
+            Form {
+                Section {
+                    if !remoteControl.macros.isEmpty {
+                        ForEach(remoteControl.macros) { macro in
+                            MacroView(model: model, macro: macro)
+                        }
+                    } else {
+                        HCenter {
+                            Text("No macros configured in streamer")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Macros")
+        } label: {
+            Text("Macros")
         }
     }
 }
@@ -630,6 +712,41 @@ private struct FiltersView: View {
     }
 }
 
+private struct SendMessageView: View {
+    let model: Model
+    @State private var text = ""
+
+    private func send() {
+        let text = text.trim()
+        guard !text.isEmpty else {
+            return
+        }
+        model.remoteControlAssistantSendMessage(text: text)
+        self.text = ""
+    }
+
+    var body: some View {
+        NavigationLink {
+            Form {
+                Section {
+                    TextField("Message", text: $text)
+                        .onSubmit {
+                            send()
+                        }
+                    TextButtonView("Send") {
+                        send()
+                    }
+                } footer: {
+                    Text("Shown in the streamers activity feed.")
+                }
+            }
+            .navigationTitle("Send message")
+        } label: {
+            Text("Send message")
+        }
+    }
+}
+
 private struct DebugLoggingView: View {
     let model: Model
     @ObservedObject var remoteControl: RemoteControl
@@ -663,6 +780,8 @@ private struct ControlBarRemoteControlAssistantControlView: View {
                 LiveView(model: model, remoteControl: remoteControl)
                 RecordingView(model: model, remoteControl: remoteControl)
                 MutedView(model: model, remoteControl: remoteControl)
+                StealthModeControlView(model: model, remoteControl: remoteControl)
+                PreviewStreamView(model: model, remoteControl: remoteControl)
                 ZoomView(model: model, remoteControl: remoteControl)
                 ScenePickerView(model: model, remoteControl: remoteControl)
                 AutoSceneSwitcherPickerView(model: model, remoteControl: remoteControl)
@@ -670,7 +789,9 @@ private struct ControlBarRemoteControlAssistantControlView: View {
                 BitrateView(model: model, remoteControl: remoteControl)
                 SrtConnectionPrioritiesView(model: model, remoteControl: remoteControl)
                 GimbalPresetView(model: model, remoteControl: remoteControl)
+                MacrosView(model: model, remoteControl: remoteControl)
                 FiltersView(model: model, remoteControl: remoteControl)
+                SendMessageView(model: model)
                 DebugLoggingView(model: model, remoteControl: remoteControl)
             } else {
                 HCenter {
@@ -745,7 +866,6 @@ private struct ButtonsView: View {
                     CloseButtonView {
                         model.showingRemoteControl = false
                         model.setQuickButton(type: .remote, isOn: model.showingRemoteControl)
-                        model.updateQuickButtonStates()
                     }
                 }
                 Spacer()
@@ -790,7 +910,7 @@ private struct ControlBarRemoteControlAssistantInnerView: View {
                     if let preview = remoteControl.preview {
                         Image(uiImage: preview)
                             .resizable()
-                            .aspectRatio(contentMode: .fit)
+                            .scaledToFit()
                             .frame(maxWidth: .infinity)
                             .onTapGesture(count: 2) { _ in
                                 remoteControl.presentingPreviewFullScreen = false
@@ -885,9 +1005,9 @@ struct ControlBarRemoteControlAssistantView: View {
 
     private func title() -> String {
         if let streamerName = remoteControlSettings.getSelectedStreamerName() {
-            return String(localized: "Remote control assistant") + " (\(streamerName))"
+            String(localized: "Remote control assistant") + " (\(streamerName))"
         } else {
-            return String(localized: "Remote control assistant")
+            String(localized: "Remote control assistant")
         }
     }
 

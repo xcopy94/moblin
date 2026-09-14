@@ -1,4 +1,6 @@
 import Collections
+import Combine
+import DequeModule
 import Foundation
 import HealthKit
 import SwiftUI
@@ -33,15 +35,18 @@ enum ChatPostHighlightKind {
     case reply
     case redemption
     case other
+    case moderator
 
     static func fromWatchProtocol(kind: WatchProtocolChatHighlightKind) -> ChatPostHighlightKind {
         switch kind {
         case .reply:
-            return .reply
+            .reply
         case .redemption:
-            return .redemption
+            .redemption
         case .other:
-            return .other
+            .other
+        case .moderator:
+            .moderator
         }
     }
 }
@@ -50,10 +55,10 @@ struct ChatPostHighlight {
     let kind: ChatPostHighlightKind
     let barColor: Color
     let image: String
-    let title: String
+    let title: String?
 
     static func fromWatchProtocol(highlight: WatchProtocolChatHighlight) -> ChatPostHighlight {
-        return ChatPostHighlight(
+        ChatPostHighlight(
             kind: ChatPostHighlightKind.fromWatchProtocol(kind: highlight.kind),
             barColor: highlight.barColor.color(),
             image: highlight.image,
@@ -73,11 +78,11 @@ struct WatchChatPost: Identifiable {
     var highlight: ChatPostHighlight?
 
     func isRedemption() -> Bool {
-        return highlight?.kind == .redemption
+        highlight?.kind == .redemption
     }
 }
 
-class WatchModel: NSObject, ObservableObject {
+class WatchModel: NSObject, ObservableObject, @unchecked Sendable {
     let chat = Chat()
     let preview = Preview()
     let control = Control()
@@ -350,19 +355,23 @@ class WatchModel: NSObject, ObservableObject {
     }
 
     func startWorkout(type: WatchProtocolWorkoutType) {
-        stopWorkout()
+        guard workoutSession == nil else {
+            return
+        }
         authorizeHealthKit {
             DispatchQueue.main.async {
                 self.startWorkoutAuthorized(type: type)
-                self.control.workoutActive = true
+                self.control.workoutActive = self.workoutSession != nil
             }
         }
     }
 
     func stopWorkout() {
-        workoutBuilder?.finishWorkout { _, _ in }
-        workoutSession?.end()
-        control.workoutActive = false
+        guard let workoutSession else {
+            control.workoutActive = false
+            return
+        }
+        workoutSession.stopActivity(with: .now)
     }
 
     private func startWorkoutAuthorized(type: WatchProtocolWorkoutType) {
@@ -410,7 +419,7 @@ class WatchModel: NSObject, ObservableObject {
         workoutBuilder.beginCollection(withStart: .now) { _, _ in }
     }
 
-    private func authorizeHealthKit(completion: @escaping () -> Void) {
+    private func authorizeHealthKit(completion: @escaping @Sendable () -> Void) {
         let typesToShare: Set = [
             HKQuantityType.workoutType(),
         ]
@@ -427,7 +436,7 @@ class WatchModel: NSObject, ObservableObject {
     }
 
     private func isWorkoutRunning() -> Bool {
-        return workoutSession?.state == .running
+        workoutSession?.state == .running
     }
 
     func setIsLive(value: Bool) {
@@ -493,28 +502,69 @@ class WatchModel: NSObject, ObservableObject {
     }
 
     func isShowingStatusThermalState() -> Bool {
-        return settings.show.thermalState
+        settings.show.thermalState
     }
 
     func isShowingStatusAudioLevel() -> Bool {
-        return settings.show.audioLevel
+        settings.show.audioLevel
     }
 
     func isShowingStatusBitrate() -> Bool {
-        return settings.show.speed && control.isLive
+        settings.show.speed && control.isLive
     }
 
     func isShowingStatusRecording() -> Bool {
-        return control.isRecording
+        control.isRecording
     }
 
     func isShowingWorkout() -> Bool {
-        return isWorkoutRunning()
+        isWorkoutRunning()
     }
 
     func createStreamMarker() {
         let message = WatchMessageFromWatch.pack(type: .createStreamMarker, data: true)
         WCSession.default.sendMessage(message, replyHandler: nil)
+    }
+
+    @MainActor
+    private func handleWorkoutStateChange(session: HKWorkoutSession,
+                                          toState: HKWorkoutSessionState,
+                                          date: Date)
+    {
+        guard session === workoutSession else {
+            return
+        }
+        switch toState {
+        case .stopped:
+            guard let workoutBuilder else {
+                return
+            }
+            workoutBuilder.endCollection(withEnd: date) { _, _ in
+                workoutBuilder.finishWorkout { _, _ in
+                    session.end()
+                }
+            }
+        case .ended:
+            finishedWorkout(session: session)
+        default:
+            break
+        }
+    }
+
+    @MainActor
+    private func handleWorkoutError(session: HKWorkoutSession) {
+        guard session === workoutSession else {
+            return
+        }
+        session.end()
+        finishedWorkout(session: session)
+    }
+
+    @MainActor
+    private func finishedWorkout(session _: HKWorkoutSession) {
+        workoutSession = nil
+        workoutBuilder = nil
+        control.workoutActive = false
     }
 }
 
@@ -522,13 +572,14 @@ extension WatchModel: WCSessionDelegate {
     func session(
         _: WCSession,
         activationDidCompleteWith _: WCSessionActivationState,
-        error _: Error?
+        error _: (any Error)?
     ) {}
 
     func session(_: WCSession, didReceiveMessage message: [String: Any]) {
-        guard let (type, data) = WatchMessageToWatch.unpack(message) else {
+        guard let (type, value) = WatchMessageToWatch.unpack(message) else {
             return
         }
+        nonisolated(unsafe) let data = value
         DispatchQueue.main.async {
             self.numberOfMessagesReceived += 1
             do {
@@ -583,19 +634,27 @@ extension WatchModel: WCSessionDelegate {
     func session(
         _: WCSession,
         didFinish _: WCSessionUserInfoTransfer,
-        error _: Error?
+        error _: (any Error)?
     ) {}
 }
 
 extension WatchModel: HKWorkoutSessionDelegate {
     func workoutSession(
-        _: HKWorkoutSession,
-        didChangeTo _: HKWorkoutSessionState,
+        _ session: HKWorkoutSession,
+        didChangeTo toState: HKWorkoutSessionState,
         from _: HKWorkoutSessionState,
-        date _: Date
-    ) {}
+        date: Date
+    ) {
+        DispatchQueue.main.async {
+            self.handleWorkoutStateChange(session: session, toState: toState, date: date)
+        }
+    }
 
-    func workoutSession(_: HKWorkoutSession, didFailWithError _: any Error) {}
+    func workoutSession(_ session: HKWorkoutSession, didFailWithError _: any Error) {
+        DispatchQueue.main.async {
+            self.handleWorkoutError(session: session)
+        }
+    }
 }
 
 extension WatchModel: HKLiveWorkoutBuilderDelegate {

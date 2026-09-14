@@ -11,7 +11,7 @@ let lowBatteryMessage = String(localized: "Low battery")
 
 class CreateStreamWizard: ObservableObject {
     var platform: WizardPlatform = .custom
-    var networkSetup: WizardNetworkSetup = .none
+    var networkSetup: WizardNetworkSetup = .direct
     var customProtocol: WizardCustomProtocol = .none
     let twitchStream = SettingsStream(name: "")
     var twitchAccessToken = ""
@@ -26,6 +26,8 @@ class CreateStreamWizard: ObservableObject {
     @Published var showKickAuth = false
     @Published var name = ""
     @Published var backgroundStreaming = false
+    @Published var autoGoLive = false
+    @Published var goLiveNotificationMoblinWebsite = false
     @Published var twitchChannelName = ""
     @Published var twitchChannelId = ""
     @Published var kickChannelName = ""
@@ -61,12 +63,15 @@ enum StreamState {
 }
 
 func failedToConnectMessage(_ name: String) -> String {
-    return String(localized: "😢 Failed to connect to \(name) 😢")
+    String(localized: "😢 Failed to connect to \(name) 😢")
 }
 
 extension Model {
     func startStream(delayed: Bool = false) {
         logger.info("stream: Start")
+        guard !isChatPhone() else {
+            return
+        }
         guard !streaming else {
             return
         }
@@ -87,7 +92,6 @@ extension Model {
         if database.location.resetWhenGoingLive {
             resetLocationData()
         }
-        streamLog.removeAll()
         setIsLive(value: true)
         streaming = true
         streamTotalBytes = 0
@@ -134,9 +138,6 @@ extension Model {
         makeStreamEndedToast()
         streamState = .disconnected
         if let streamingHistoryStream {
-            if let logId = streamingHistoryStream.logId {
-                logsStorage.write(id: logId, data: streamLog.joined(separator: "\n").utf8Data)
-            }
             streamingHistoryStream.stopTime = Date()
             streamingHistoryStream.totalBytes = streamTotalBytes
             streamingHistory.append(stream: streamingHistoryStream)
@@ -146,6 +147,10 @@ extension Model {
     }
 
     func isGoLiveNotificationConfigured() -> Bool {
+        isGoLiveNotificationDiscordConfigured() || stream.goLiveNotificationMoblinWebsite
+    }
+
+    private func isGoLiveNotificationDiscordConfigured() -> Bool {
         guard !stream.goLiveNotificationDiscordMessage.isEmpty else {
             return false
         }
@@ -156,16 +161,17 @@ extension Model {
     }
 
     func sendGoLiveNotification() {
-        media.takeSnapshot(age: 0.0) { image, _, _ in
-            guard let imageJpeg = image.jpegData(compressionQuality: 0.9) else {
-                return
-            }
-            DispatchQueue.main.async {
-                if let url = URL(string: self.stream.goLiveNotificationDiscordWebhookUrl) {
-                    self.tryUploadGoLiveNotificationToDiscord(imageJpeg, url)
+        if isGoLiveNotificationDiscordConfigured(),
+           let url = URL(string: stream.goLiveNotificationDiscordWebhookUrl)
+        {
+            media.takeSnapshot(age: 0.0) { image, _, _ in
+                guard let imageJpeg = image.jpegData(compressionQuality: 0.9) else {
+                    return
                 }
+                self.tryUploadGoLiveNotificationToDiscord(imageJpeg, url)
             }
         }
+        sendLiveToMoblinWebsite()
     }
 
     private func tryUploadGoLiveNotificationToDiscord(_ image: Data, _ url: URL) {
@@ -189,6 +195,8 @@ extension Model {
             startNetStreamRist()
         case .whip:
             startNetStreamWhip()
+        case .mobcam:
+            startNetStreamMobcam()
         }
         updateSpeed(now: .now)
         streamBecameBrokenTime = nil
@@ -219,6 +227,7 @@ extension Model {
             overheadBandwidth: database.debug.srtOverheadBandwidth,
             maximumBandwidthFollowInput: database.debug.maximumBandwidthFollowInput,
             mpegtsPacketsPerPacket: srt.mpegtsPacketsPerPacket(),
+            packetPadding: database.debug.packetPadding,
             networkInterfaceNames: database.networkInterfaceNames,
             connectionPriorities: srt.connectionPriorities,
             dnsLookupStrategy: srt.dnsLookupStrategy
@@ -243,6 +252,46 @@ extension Model {
                               videoBitrate: Double(stream.bitrate))
     }
 
+    private func startNetStreamMobcam() {
+        media.mobcamStartStream(port: stream.mobcamPort(), deviceName: UIDevice.current.name)
+    }
+
+    func startPreviewStream() {
+        guard !isPreviewStreaming else {
+            return
+        }
+        guard !stream.previewStream.url.isEmpty else {
+            makeErrorToast(title: String(localized: "Preview stream not configured"))
+            return
+        }
+        media.startPreviewStream(url: stream.previewStream.url,
+                                 resolution: stream.previewStream.resolution,
+                                 bitrate: stream.previewStream.bitrate)
+        setIsPreviewStreaming(value: true)
+    }
+
+    func stopPreviewStream() {
+        guard isPreviewStreaming else {
+            return
+        }
+        media.stopPreviewStream()
+        setIsPreviewStreaming(value: false)
+    }
+
+    func togglePreviewStream() {
+        if isPreviewStreaming {
+            stopPreviewStream()
+        } else {
+            startPreviewStream()
+        }
+    }
+
+    func setIsPreviewStreaming(value: Bool) {
+        isPreviewStreaming = value
+        setQuickButton(type: .previewStream, isOn: value)
+        remoteControlStateChanged(state: .init(previewStream: value))
+    }
+
     func stopNetStream() {
         moblink.streamer?.stopTunnels()
         reconnectTimer.stop()
@@ -250,6 +299,7 @@ extension Model {
         media.srtStopStream()
         media.ristStopStream()
         media.whipStopStream()
+        media.mobcamStopStream()
         streamStartTime = nil
         updateStreamUptime(now: .now)
         updateSpeed(now: .now)
@@ -282,7 +332,7 @@ extension Model {
     }
 
     func findStream(id: UUID) -> SettingsStream? {
-        return database.streams.first { stream in
+        database.streams.first { stream in
             stream.id == id
         }
     }
@@ -300,6 +350,7 @@ extension Model {
         setStreamKeyFrameInterval()
         setStreamBitrate(stream: stream)
         setStreamRateControl(stream: stream)
+        setGraphicsImplementation()
         setAudioStreamBitrate(stream: stream)
         setAudioStreamFormat(format: stream.audioCodec.toEncoder())
         setAudioChannelsMap(channelsMap: [
@@ -307,6 +358,7 @@ extension Model {
             1: database.audio.outputToInputChannelsMap.channel2,
         ])
         setAudioGain(gainDb: database.audio.gainDb)
+        updateMicDelay()
         startRecorderIfNeeded()
         reloadConnections()
         resetChat()
@@ -326,12 +378,13 @@ extension Model {
     }
 
     private func setNetStream() {
-        cameraPreviewLayer?.session = nil
+        cameraPreviewView.setDevices(ids: [])
         media.setNetStream(
             proto: stream.getProtocol(),
             portrait: stream.portrait,
             timecodesEnabled: isTimecodesEnabled(),
             builtinAudioDelay: database.debug.builtinAudioAndVideoDelay,
+            attachDefaultAudio: !isChatPhone(),
             destinations: stream.multiStreaming.destinations,
             srtImplementation: stream.srt.implementation,
             limitAdaptiveBitrateByTransportBitrate: stream.rateControl != .cbr
@@ -345,6 +398,7 @@ extension Model {
         setCleanRecordings()
         setCleanExternalDisplay()
         updateCameraControls()
+        updateTalkback()
     }
 
     private func attachStream() {
@@ -355,53 +409,53 @@ extension Model {
         processorControlQueue.async {
             processor.setDrawable(drawable: self.streamPreviewView)
             processor.setExternalDisplayDrawable(drawable: self.externalDisplayStreamPreviewView)
-            self.processor = processor
+            DispatchQueue.main.async {
+                self.processor = processor
+            }
             processor.startRunning()
         }
     }
 
     func setStreamResolution() {
-        let resolution: SettingsStreamResolution
-        if stream.recording.overrideStream {
+        let resolution: SettingsStreamResolution = if stream.recording.overrideStream {
             if stream.recording.resolution > stream.resolution {
-                resolution = stream.recording.resolution
+                stream.recording.resolution
             } else {
-                resolution = stream.resolution
+                stream.resolution
             }
         } else {
-            resolution = stream.resolution
+            stream.resolution
         }
-        var captureSize: CGSize
-        switch resolution {
+        let captureSize: CGSize = switch resolution {
         case .r4032x3024:
-            captureSize = .init(width: 4032, height: 3024)
+            .init(width: 4032, height: 3024)
         case .r3840x2160:
-            captureSize = .init(width: 3840, height: 2160)
+            .init(width: 3840, height: 2160)
         case .r2560x1440:
             // Use 4K camera and downscale to 1440p.
-            captureSize = .init(width: 3840, height: 2160)
+            .init(width: 3840, height: 2160)
         case .r1920x1440:
-            captureSize = .init(width: 1920, height: 1440)
+            .init(width: 1920, height: 1440)
         case .r1920x1080:
-            captureSize = .init(width: 1920, height: 1080)
+            .init(width: 1920, height: 1080)
         case .r1664x936:
             // Use 1080p camera and downscale to 936p.
-            captureSize = .init(width: 1920, height: 1080)
+            .init(width: 1920, height: 1080)
         case .r1024x768:
-            captureSize = .init(width: 1024, height: 768)
+            .init(width: 1024, height: 768)
         case .r1280x720:
-            captureSize = .init(width: 1280, height: 720)
+            .init(width: 1280, height: 720)
         case .r960x540:
-            captureSize = .init(width: 960, height: 540)
+            .init(width: 960, height: 540)
         case .r854x480:
             // Use 540p camera and downscale to 480p.
-            captureSize = .init(width: 960, height: 540)
+            .init(width: 960, height: 540)
         case .r640x360:
             // Use 540p camera and downscale to 360p.
-            captureSize = .init(width: 960, height: 540)
+            .init(width: 960, height: 540)
         case .r426x240:
             // Use 540p camera and downscale to 240p.
-            captureSize = .init(width: 960, height: 540)
+            .init(width: 960, height: 540)
         }
         media.setVideoSize(capture: captureSize,
                            canvas: resolution.dimensions(portrait: stream.portrait).toSize(),
@@ -439,15 +493,15 @@ extension Model {
     }
 
     func isStreamConfigured() -> Bool {
-        return stream != fallbackStream
+        stream != fallbackStream
     }
 
     func isStreamConnected() -> Bool {
-        return streamState == .connected
+        streamState == .connected
     }
 
     func isStreaming() -> Bool {
-        return streaming
+        streaming
     }
 
     func updateStreamUptime(now: ContinuousClock.Instant) {
@@ -465,6 +519,13 @@ extension Model {
 
     func makeStreamEndedToast(subTitle: String? = nil, onTapped: (() -> Void)? = nil) {
         makeToast(title: String(localized: "🤟 Stream ended 🤟"), subTitle: subTitle, onTapped: onTapped)
+    }
+
+    func makeNotLoggedInToToast(platform: Platform) {
+        makeErrorToast(
+            title: String(localized: "Not logged in to \(platform.name())"),
+            subTitle: String(localized: "Please login again")
+        )
     }
 
     private func makeConnectFailureToast(subTitle: String) {
@@ -558,6 +619,29 @@ extension Model {
         }
     }
 
+    private func handleMobcamConnected() {
+        DispatchQueue.main.async {
+            self.onConnected()
+        }
+    }
+
+    private func handleMobcamDisconnected(reason: String) {
+        DispatchQueue.main.async {
+            self.onMobcamDisconnected(reason: reason)
+        }
+    }
+
+    private func onMobcamDisconnected(reason: String) {
+        guard streaming else {
+            return
+        }
+        logger.info("stream: Mobcam disconnected with reason: \(reason)")
+        streamState = .connecting
+        streamStartTime = nil
+        updateStreamUptime(now: .now)
+        updateSpeed(now: .now)
+    }
+
     private func handleAudioBuffer(sampleBuffer: CMSampleBuffer) {
         DispatchQueue.main.async {
             self.speechToText?.append(sampleBuffer: sampleBuffer)
@@ -600,22 +684,20 @@ extension Model {
             let speedString = formatBytesPerSecond(speed: speed)
             let total = sizeFormatter.string(fromByteCount: media.streamTotal())
             let numberOfDestinations = media.getNumberOfDestinations()
-            let speedAndTotal: String
-            if numberOfDestinations == 1 {
-                speedAndTotal = String(localized: "\(speedString) (\(total))")
+            let speedAndTotal = if numberOfDestinations == 1 {
+                String(localized: "\(speedString) (\(total))")
             } else {
-                speedAndTotal = String(localized: "\(speedString) x\(numberOfDestinations) (\(total))")
+                String(localized: "\(speedString) x\(numberOfDestinations) (\(total))")
             }
             if speedAndTotal != bitrate.speedAndTotal {
                 bitrate.speedAndTotal = speedAndTotal
             }
-            let bitrateStatusIconColor: Color?
-            if speed < stream.bitrate / 5 {
-                bitrateStatusIconColor = .red
+            let bitrateStatusIconColor: Color? = if speed < stream.bitrate / 5 {
+                .red
             } else if speed < stream.bitrate / 2 {
-                bitrateStatusIconColor = .orange
+                .orange
             } else {
-                bitrateStatusIconColor = nil
+                nil
             }
             if bitrateStatusIconColor != bitrate.statusIconColor {
                 bitrate.statusIconColor = bitrateStatusIconColor
@@ -669,6 +751,7 @@ extension Model {
                 }
             }
             sendPreviewToRemoteControlAssistant(preview: image)
+            sendPreviewToRemoteControlWeb(preview: image)
         }
     }
 
@@ -749,9 +832,16 @@ extension Model {
 
     private func handleFps(fps: Int) {
         DispatchQueue.main.async { [self] in
-            self.currentFps = fps
-            self.updateStatusStreamText()
+            currentFps = fps
+            updateStatusStreamText()
         }
+    }
+
+    func startStreamIfAutoGoLive() {
+        guard stream.autoGoLive, stream.getProtocol() == .mobcam, !isLive else {
+            return
+        }
+        startStream()
     }
 
     func toggleStream() {
@@ -765,6 +855,7 @@ extension Model {
     func setIsLive(value: Bool) {
         isLive = value
         updateLiveActivity()
+        updateMacStatusItem()
         updatePictureInPicture()
         if isWatchLocal() {
             sendIsLiveToWatch(isLive: isLive)
@@ -773,7 +864,11 @@ extension Model {
     }
 
     func setStreamFps(fps: Int? = nil) {
-        media.setFps(fps: fps ?? stream.fps, preferAutoFps: stream.lowLightBoost)
+        if isChatPhone() {
+            media.setFps(fps: 1, preferAutoFps: false)
+        } else {
+            media.setFps(fps: fps ?? stream.fps, preferAutoFps: stream.lowLightBoost)
+        }
     }
 
     func setStreamBitrate(stream: SettingsStream) {
@@ -788,8 +883,12 @@ extension Model {
         media.setVideoStreamRateControl(rateControl: stream.rateControl)
     }
 
+    func setGraphicsImplementation() {
+        media.setGraphicsImplementation(database.graphicsImplementation)
+    }
+
     func getBitratePresetByBitrate(bitrate: UInt32) -> SettingsBitratePreset? {
-        return database.bitratePresets.first(where: { $0.bitrate == bitrate })
+        database.bitratePresets.first(where: { $0.bitrate == bitrate })
     }
 
     func setBitrate(bitrate: UInt32) {
@@ -806,7 +905,7 @@ extension Model {
     }
 
     private func getBitrate() -> UInt32 {
-        return statusTopRight.isLowPowerMode ? lowPowerBitrate : stream.bitrate
+        statusTopRight.isLowPowerMode ? lowPowerBitrate : stream.bitrate
     }
 
     func setAudioStreamBitrate(stream: SettingsStream) {
@@ -828,7 +927,7 @@ extension Model {
     }
 
     func isShowingStatusStream() -> Bool {
-        return database.show.stream && isStreamConfigured()
+        database.show.stream && isStreamConfigured() && !isChatPhone()
     }
 
     func updateBitrateStatus() {
@@ -836,13 +935,14 @@ extension Model {
             previousBitrateStatusColorSrtDroppedPacketsTotal = media.srtDroppedPacketsTotal
             previousBitrateStatusNumberOfFailedEncodings = numberOfFailedEncodings
         }
-        let newBitrateStatusColor: Color
-        if media.srtDroppedPacketsTotal > previousBitrateStatusColorSrtDroppedPacketsTotal {
-            newBitrateStatusColor = .red
+        let newBitrateStatusColor: Color = if media
+            .srtDroppedPacketsTotal > previousBitrateStatusColorSrtDroppedPacketsTotal
+        {
+            .red
         } else if numberOfFailedEncodings > previousBitrateStatusNumberOfFailedEncodings {
-            newBitrateStatusColor = .red
+            .red
         } else {
-            newBitrateStatusColor = .white
+            .white
         }
         if newBitrateStatusColor != bitrate.statusColor {
             bitrate.statusColor = newBitrateStatusColor
@@ -883,7 +983,7 @@ extension Model {
     }
 }
 
-extension Model: MediaDelegate {
+extension Model: @preconcurrency MediaDelegate {
     func mediaOnSrtConnected() {
         handleSrtConnected()
     }
@@ -922,6 +1022,14 @@ extension Model: MediaDelegate {
 
     func mediaOnWhipDisconnected(_ reason: String) {
         handleWhipDisconnected(reason: reason)
+    }
+
+    func mediaOnMobcamConnected() {
+        handleMobcamConnected()
+    }
+
+    func mediaOnMobcamDisconnected(_ reason: String) {
+        handleMobcamDisconnected(reason: reason)
     }
 
     func mediaOnAudioMuteChange() {
@@ -982,8 +1090,12 @@ extension Model: MediaDelegate {
         handleFps(fps: fps)
     }
 
-    func mediaStrlaRelayDestinationAddress(address: String, port: UInt16) {
+    func mediaMoblinkStreamerDestinationAddress(address: String, port: UInt16) {
         moblink.streamer?.startTunnels(address: address, port: port)
+    }
+
+    func mediaMoblinkStreamerRestartTunnel(relayId: UUID) {
+        moblink.streamer?.restartTunnel(relayId: relayId)
     }
 
     func mediaSetZoomX(x: Float) {
@@ -1001,13 +1113,13 @@ extension Model: MediaDelegate {
         }
     }
 
-    func mediaError(error: Error) {
+    func mediaError(error: any Error) {
         makeErrorToastMain(title: error.localizedDescription, subTitle: tryGetToastSubTitle(error: error))
     }
 
     func mediaOnWhipPerform(request: URLRequest,
                             queue: DispatchQueue,
-                            completion: ((Data?, URLResponse?, (any Error)?) -> Void)?)
+                            completion: (@MainActor (Data?, URLResponse?, (any Error)?) -> Void)?)
     {
         DispatchQueue.main.async {
             switch self.stream.whip.httpTransport {
@@ -1034,5 +1146,5 @@ extension Model: MediaDelegate {
 }
 
 private func videoCaptureError() -> String {
-    return String(localized: "Try to use single or low-energy cameras.")
+    String(localized: "Try to use single or low-energy cameras.")
 }

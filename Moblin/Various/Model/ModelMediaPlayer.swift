@@ -95,33 +95,30 @@ extension Model {
     }
 
     func playerCameras() -> [Camera] {
-        return database.mediaPlayers.players.map {
+        database.mediaPlayers.players.map {
             Camera(id: $0.id.uuidString, name: $0.camera())
         }
     }
 
     func getMediaPlayer(idString: String) -> SettingsMediaPlayer? {
-        return database.mediaPlayers.players.first {
+        database.mediaPlayers.players.first {
             idString == $0.id.uuidString
         }
     }
 
     func getMediaPlayer(id: UUID) -> SettingsMediaPlayer? {
-        return database.mediaPlayers.players.first {
+        database.mediaPlayers.players.first {
             $0.id == id
         }
     }
 }
 
-extension Model: MediaPlayerDelegate {
+extension Model: @preconcurrency MediaPlayerDelegate {
     func mediaPlayerFileLoaded(playerId: UUID, name: String) {
         let name = "Media player: \(name)"
         let latency = mediaPlayerLatency
         media.addBufferedVideo(cameraId: playerId, name: name, latency: latency)
         media.addBufferedAudio(cameraId: playerId, name: name, latency: latency)
-        // DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-        //     self.selectMicById(id: "\(playerId) 0")
-        // }
     }
 
     func mediaPlayerFileUnloaded(playerId: UUID) {

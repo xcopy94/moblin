@@ -1,6 +1,9 @@
 import CoreImage
+import MetalPetal
 import SwiftCube
 import SwiftUI
+
+private let loaderQueue = DispatchQueue(label: "com.eerimoq.mobs.lut-loader")
 
 private func interpolate3d(at point: SIMD3<Float>, in lut: [SIMD3<Float>], dimension: Int) -> SIMD3<Float> {
     let dimensionFloat = Float(dimension)
@@ -51,7 +54,7 @@ func lutEffectConvertLut(image: UIImage) throws -> (Float, Data) {
     let width = image.size.width * image.scale
     let height = image.size.height * image.scale
     let dimension = Int(cbrt(Double(width * height)))
-    guard Int(width) % dimension == 0, Int(height) % dimension == 0 else {
+    guard dimension > 0, Int(width) % dimension == 0, Int(height) % dimension == 0 else {
         throw String(localized: "LUT image is not a cube")
     }
     guard dimension * dimension * dimension == Int(width * height) else {
@@ -118,55 +121,112 @@ func lutEffectConvertLut(image: UIImage) throws -> (Float, Data) {
     return (Float(dimension), Data(bytes: originalCube, count: numberOutputOfComponents * 4))
 }
 
-final class LutEffect: VideoEffect {
-    private var filter: (CIFilter & CIColorCubeWithColorSpace)?
+private func makeLutImage(dimension: Int, cubeData: Data) -> MTIImage? {
+    let pixelsCount = dimension * dimension * dimension
+    guard cubeData.count == pixelsCount * 4 * 4 else {
+        return nil
+    }
+    var pixels = [UInt8](repeating: 0, count: pixelsCount * 4)
+    cubeData.withUnsafeBytes { rawCube in
+        let cube = rawCube.bindMemory(to: Float.self)
+        for blue in 0 ..< dimension {
+            for green in 0 ..< dimension {
+                for red in 0 ..< dimension {
+                    let cubeIndex = 4 * ((blue * dimension + green) * dimension + red)
+                    let pixelIndex = 4 * (green * dimension * dimension + blue * dimension + red)
+                    for component in 0 ..< 4 {
+                        pixels[pixelIndex + component] = UInt8(
+                            min(max((cube[cubeIndex + component] * 255).rounded(), 0), 255)
+                        )
+                    }
+                }
+            }
+        }
+    }
+    let context = CGContext(data: &pixels,
+                            width: dimension * dimension,
+                            height: dimension,
+                            bitsPerComponent: 8,
+                            bytesPerRow: dimension * dimension * 4,
+                            space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    guard let cgImage = context?.makeImage() else {
+        return nil
+    }
+    return MTIImage(cgImage: cgImage, options: [.SRGB: false], isOpaque: true)
+}
+
+private func makeCubeData(_ entries: [LutEntry]) -> Data {
+    var cube: [Float] = []
+    cube.reserveCapacity(entries.count * 4)
+    for entry in entries {
+        cube.append(entry.red)
+        cube.append(entry.green)
+        cube.append(entry.blue)
+        cube.append(1)
+    }
+    return Data(bytes: cube, count: cube.count * 4)
+}
+
+final class LutEffect: VideoEffect, @unchecked Sendable {
+    private var filter: (any CIFilter & CIColorCubeWithColorSpace)?
+    private let filterMetalPetal = MTIColorLookupFilter()
 
     func setLut(
         lut: SettingsColorLut?,
         imageStorage: ImageStorage,
-        onError: @escaping (String, String?) -> Void
+        onError: @escaping @MainActor (String, String?) -> Void
     ) {
-        DispatchQueue.global().async {
+        loaderQueue.async {
             do {
                 try self.loadLut(lut: lut, imageStorage: imageStorage)
             } catch {
-                let subTitle: String
-                switch error {
+                let subTitle = switch error {
                 case SwiftCubeError.couldNotDecodeData:
-                    subTitle = "Not a text file"
+                    "Not a text file"
                 case SwiftCubeError.sizeMissing:
-                    subTitle = "Size missing"
+                    "Size missing"
                 case let SwiftCubeError.sizeTooBig(size):
-                    subTitle = "Size \(size) too big"
+                    "Size \(size) too big"
                 case SwiftCubeError.oneDimensionalLutNotSupported:
-                    subTitle = "One dimensional LUT not supported"
+                    "One dimensional LUT not supported"
                 case let SwiftCubeError.unsupportedKey(key):
-                    subTitle = "Unsupported key \(key)"
+                    "Unsupported key \(key)"
                 case SwiftCubeError.invalidType:
-                    subTitle = "Invalid type"
+                    "Invalid type"
                 case SwiftCubeError.typeMissing:
-                    subTitle = "Type missing"
+                    "Type missing"
                 case let SwiftCubeError.invalidDataPoint(point):
-                    subTitle = "Invalid data point \(point)"
+                    "Invalid data point \(point)"
                 case let SwiftCubeError.wrongNumberOfDataPoints(count):
-                    subTitle = "Wrong number of data points \(count)"
+                    "Wrong number of data points \(count)"
                 case let SwiftCubeError.invalidSyntax(text):
-                    subTitle = "Invalid syntax \(text)"
+                    "Invalid syntax \(text)"
                 default:
-                    subTitle = "\(error)"
+                    "\(error)"
                 }
-                onError(String(localized: "Failed to load .cube file"), subTitle)
+                DispatchQueue.main.async {
+                    onError(String(localized: "Failed to load .cube file"), subTitle)
+                }
             }
         }
     }
 
     override func isEnabled() -> Bool {
-        return filter != nil
+        filter != nil
     }
 
     override func execute(_ image: CIImage, _: VideoEffectInfo) -> CIImage {
         filter?.inputImage = image
         return filter?.outputImage ?? image
+    }
+
+    override func executeMetalPetal(_ image: MTIImage, _: VideoEffectInfo) -> MTIImage {
+        guard filterMetalPetal.inputColorLookupTable != nil else {
+            return image
+        }
+        filterMetalPetal.inputImage = image
+        return filterMetalPetal.outputImage ?? image
     }
 
     private func loadLut(lut: SettingsColorLut?, imageStorage: ImageStorage) throws {
@@ -182,6 +242,7 @@ final class LutEffect: VideoEffect {
         } else {
             processorPipelineQueue.async {
                 self.filter = nil
+                self.filterMetalPetal.inputColorLookupTable = nil
             }
         }
     }
@@ -213,20 +274,28 @@ final class LutEffect: VideoEffect {
             }
             sc3dLut.size = 64
         }
+        nonisolated(unsafe)
         let filter = try sc3dLut.ciFilter()
+        nonisolated(unsafe)
+        let lutImage = makeLutImage(dimension: sc3dLut.size, cubeData: makeCubeData(sc3dLut.entries))
         processorPipelineQueue.async {
             self.filter = filter
+            self.filterMetalPetal.inputColorLookupTable = lutImage
         }
     }
 
     private func loadImageLut(image: UIImage) throws {
         let (dimension, data) = try lutEffectConvertLut(image: image)
+        nonisolated(unsafe)
         let filter = CIFilter.colorCubeWithColorSpace()
         filter.cubeData = data
         filter.cubeDimension = dimension
         filter.colorSpace = CGColorSpaceCreateDeviceRGB()
+        nonisolated(unsafe)
+        let lutImage = makeLutImage(dimension: Int(dimension), cubeData: data)
         processorPipelineQueue.async {
             self.filter = filter
+            self.filterMetalPetal.inputColorLookupTable = lutImage
         }
     }
 }

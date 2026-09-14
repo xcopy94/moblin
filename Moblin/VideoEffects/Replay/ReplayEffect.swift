@@ -1,5 +1,6 @@
 import Collections
 import CoreImage
+import MetalPetal
 import Vision
 
 private let fadeTransitionLength = 0.5
@@ -27,18 +28,27 @@ private enum StingersState {
     case end
 }
 
-final class ReplayEffect: VideoEffect {
+private enum ReplayEffectOutput {
+    case background
+    case replay(EffectImageCiImage)
+    case fadeToReplay(EffectImageCiImage, Double)
+    case fadeToBackground(EffectImageCiImage, Double)
+    case stinger(EffectImageCiImage, EffectImageCiImage?)
+}
+
+final class ReplayEffect: VideoEffect, @unchecked Sendable {
     private var playbackCompleted = false
     private let speed: Double
     private let reader: ReplayEffectReplayReader
     private var startPresentationTimeStamp: Double?
-    private weak var delegate: ReplayEffectDelegate?
+    private weak var delegate: (any ReplayEffectDelegate)?
     private var lastImageOffset: Double?
-    private var latestImage: CIImage?
+    private var latestImage: EffectImageCiImage?
     private var cancelled = false
     private var cancelledOffset: Double?
     private let transitionMode: ReplayEffectTransitionMode
     private let duration: Double
+    private var layout: SettingsWidgetLayout
     private var latestTimeLeft = Int.max
     private var stingersState: StingersState = .setup
     private var stingersInReader: ReplayEffectStingerReader?
@@ -55,10 +65,12 @@ final class ReplayEffect: VideoEffect {
         stop: Double,
         speed: Double,
         size: CMVideoDimensions,
+        layout: SettingsWidgetLayout,
         transitionMode: ReplayEffectTransitionMode,
-        delegate: ReplayEffectDelegate
+        delegate: any ReplayEffectDelegate
     ) {
         self.speed = speed
+        self.layout = layout
         self.transitionMode = transitionMode
         self.delegate = delegate
         duration = stop - start
@@ -73,6 +85,12 @@ final class ReplayEffect: VideoEffect {
         updateStatus(offset: 0)
     }
 
+    func setLayout(layout: SettingsWidgetLayout) {
+        processorPipelineQueue.async {
+            self.layout = layout
+        }
+    }
+
     func cancel() {
         processorPipelineQueue.async {
             self.cancelled = true
@@ -80,16 +98,89 @@ final class ReplayEffect: VideoEffect {
     }
 
     override func execute(_ image: CIImage, _ info: VideoEffectInfo) -> CIImage {
-        switch transitionMode {
-        case .none, .fade:
-            return executeNoneAndFade(image, info.presentationTimeStamp.seconds)
-        case .stingers:
-            return executeStingers(image, info.presentationTimeStamp.seconds)
+        switch update(info.presentationTimeStamp.seconds) {
+        case .background:
+            return image
+        case let .replay(replayImage):
+            return applyLayoutToReplay(replayImage, image)
+        case let .fadeToReplay(replayImage, ratio):
+            return fade(image, applyLayoutToReplay(replayImage, image), ratio) ?? image
+        case let .fadeToBackground(replayImage, ratio):
+            return fade(applyLayoutToReplay(replayImage, image), image, ratio) ?? image
+        case let .stinger(stingerImage, replayImage):
+            let backgroundImage = replayImage.map { applyLayoutToReplay($0, image) } ?? image
+            return stingerImage.getCiImage().composited(over: backgroundImage)
+        }
+    }
+
+    override func executeMetalPetal(_ image: MTIImage, _ info: VideoEffectInfo) -> MTIImage {
+        switch update(info.presentationTimeStamp.seconds) {
+        case .background:
+            return image
+        case let .replay(replayImage):
+            return applyLayoutToReplayMetalPetal(replayImage, image)
+        case let .fadeToReplay(replayImage, ratio):
+            return fadeMetalPetal(image, applyLayoutToReplayMetalPetal(replayImage, image), ratio)
+        case let .fadeToBackground(replayImage, ratio):
+            return fadeMetalPetal(applyLayoutToReplayMetalPetal(replayImage, image), image, ratio)
+        case let .stinger(stingerImage, replayImage):
+            let backgroundImage = replayImage.map { applyLayoutToReplayMetalPetal($0, image) } ?? image
+            return blendMetalPetal(stingerImage.getMetalPetalImage(), backgroundImage, 1)
         }
     }
 
     override func shouldRemove() -> Bool {
-        return playbackCompleted
+        playbackCompleted
+    }
+
+    private func update(_ presentationTimeStamp: Double) -> ReplayEffectOutput {
+        switch transitionMode {
+        case .none, .fade:
+            updateNoneAndFade(presentationTimeStamp)
+        case .stingers:
+            updateStingers(presentationTimeStamp)
+        }
+    }
+
+    private func applyLayoutToReplay(_ replayImage: EffectImageCiImage, _ image: CIImage) -> CIImage {
+        replayImage.getCiImage()
+            .resizeMirror(layout, image.extent.size, false)
+            .move(layout, image.extent.size)
+            .cropped(to: image.extent)
+            .composited(over: image)
+    }
+
+    private func applyLayoutToReplayMetalPetal(_ replayImage: EffectImageCiImage,
+                                               _ image: MTIImage) -> MTIImage
+    {
+        let replayImage = replayImage.getMetalPetalImage()
+        return replayImage.resizeMirrorMoveComposited(layout,
+                                                      false,
+                                                      image,
+                                                      .init(contentRegion: replayImage.extent))
+    }
+
+    private func fade(_ input: CIImage, _ target: CIImage, _ ratio: Double) -> CIImage? {
+        let filter = CIFilter.dissolveTransition()
+        filter.inputImage = input
+        filter.targetImage = target
+        filter.time = Float(ratio)
+        return filter.outputImage
+    }
+
+    private func fadeMetalPetal(_ input: MTIImage, _ target: MTIImage, _ ratio: Double) -> MTIImage {
+        blendMetalPetal(target, input, Float(ratio))
+    }
+
+    private func blendMetalPetal(_ image: MTIImage,
+                                 _ backgroundImage: MTIImage,
+                                 _ intensity: Float) -> MTIImage
+    {
+        let filter = MTIBlendFilter(blendMode: .normal)
+        filter.inputBackgroundImage = backgroundImage
+        filter.inputImage = image
+        filter.intensity = intensity
+        return filter.outputImage ?? backgroundImage
     }
 
     private func updateStatus(offset: Double) {
@@ -112,7 +203,7 @@ final class ReplayEffect: VideoEffect {
 }
 
 extension ReplayEffect {
-    private func executeNoneAndFade(_ image: CIImage, _ presentationTimeStamp: Double) -> CIImage {
+    private func updateNoneAndFade(_ presentationTimeStamp: Double) -> ReplayEffectOutput {
         if startPresentationTimeStamp == nil {
             startPresentationTimeStamp = presentationTimeStamp
         }
@@ -122,65 +213,62 @@ extension ReplayEffect {
             if cancelledOffset == nil {
                 cancelledOffset = offset
             }
-            return executeEndNoneAndFade(image, offset - cancelledOffset!) ?? image
+            return updateEndNoneAndFade(offset - cancelledOffset!)
         } else if let lastImageOffset {
-            return executeEndNoneAndFade(image, offset - lastImageOffset) ?? image
+            return updateEndNoneAndFade(offset - lastImageOffset)
         } else {
-            return executeBeginAndMiddleNoneAndFade(image, offset) ?? image
+            return updateBeginAndMiddleNoneAndFade(offset)
         }
     }
 
-    private func executeBeginAndMiddleNoneAndFade(_ image: CIImage, _ offset: Double) -> CIImage? {
+    private func updateBeginAndMiddleNoneAndFade(_ offset: Double) -> ReplayEffectOutput {
         let replayImage = reader.getImage(offset: offset * speed)
-        let replayImageImage = scaleReplay(replayImage.image, image)
-        latestImage = replayImageImage ?? latestImage
+        latestImage = replayImage.image ?? latestImage
         if replayImage.isLast {
             lastImageOffset = offset
-        } else if replayImageImage == nil {
+        } else if replayImage.image == nil {
             startPresentationTimeStamp = nil
         }
+        guard let latestImage else {
+            return .background
+        }
         if case .fade = transitionMode, offset <= fadeTransitionLength {
-            return applyFadeTransition(image, replayImageImage, offset)
+            return .fadeToReplay(latestImage, offset / fadeTransitionLength)
         } else {
-            return replayImageImage ?? latestImage
+            return .replay(latestImage)
         }
     }
 
-    private func executeEndNoneAndFade(_ image: CIImage, _ offset: Double) -> CIImage? {
+    private func updateEndNoneAndFade(_ offset: Double) -> ReplayEffectOutput {
         if case .fade = transitionMode, offset <= fadeTransitionLength {
-            return applyFadeTransition(latestImage, image, offset)
+            guard let latestImage else {
+                return .background
+            }
+            return .fadeToBackground(latestImage, offset / fadeTransitionLength)
         } else {
             replayCompleted()
-            return image
+            return .background
         }
-    }
-
-    private func applyFadeTransition(_ input: CIImage?, _ target: CIImage?, _ offset: Double) -> CIImage? {
-        let filter = CIFilter.dissolveTransition()
-        filter.inputImage = input
-        filter.targetImage = target
-        filter.time = Float(offset / fadeTransitionLength)
-        return filter.outputImage
     }
 }
 
 extension ReplayEffect {
-    private func executeStingers(_ image: CIImage, _ presentationTimeStamp: Double) -> CIImage {
+    private func updateStingers(_ presentationTimeStamp: Double) -> ReplayEffectOutput {
         switch stingersState {
         case .setup:
-            return executeStingersSetup(image, presentationTimeStamp)
+            updateStingersSetup(presentationTimeStamp)
         case .begin:
-            return executeStingersBegin(image, presentationTimeStamp)
+            updateStingersBegin(presentationTimeStamp)
         case .middle:
-            return executeStingersMiddle(image, presentationTimeStamp)
+            updateStingersMiddle(presentationTimeStamp)
         case .end:
-            return executeStingersEnd(image, presentationTimeStamp)
+            updateStingersEnd(presentationTimeStamp)
         }
     }
 
-    private func executeStingersSetup(_ image: CIImage, _ presentationTimeStamp: Double) -> CIImage {
+    private func updateStingersSetup(_ presentationTimeStamp: Double) -> ReplayEffectOutput {
         guard let stingersInReader, let stingersOutReader else {
-            return image
+            return .background
         }
         if case .ok = stingersInReader.setupState, case .ok = stingersOutReader.setupState {
             startPresentationTimeStamp = presentationTimeStamp
@@ -198,55 +286,62 @@ extension ReplayEffect {
             reportBadStingerVideo()
             replayCompleted()
         }
-        return image
+        return .background
     }
 
-    private func executeStingersBegin(_ image: CIImage, _ presentationTimeStamp: Double) -> CIImage {
+    private func updateStingersBegin(_ presentationTimeStamp: Double) -> ReplayEffectOutput {
         updateCancelled(presentationTimeStamp)
-        let backgroundImage = getStingersBackgroundImage(image, presentationTimeStamp)
+        let backgroundImage = getStingersBackgroundImage(presentationTimeStamp)
         let offset = presentationTimeStamp - startPresentationTimeStamp!
         if let stingerImage = stingersInReader?.getImage(offset: offset)?.image {
-            return stingerImage.composited(over: backgroundImage)
+            return .stinger(stingerImage, backgroundImage)
         } else {
             stingersState = .middle
-            return backgroundImage
+            return makeBackgroundOutput(backgroundImage)
         }
     }
 
-    private func executeStingersMiddle(_ image: CIImage, _ presentationTimeStamp: Double) -> CIImage {
+    private func updateStingersMiddle(_ presentationTimeStamp: Double) -> ReplayEffectOutput {
         updateCancelled(presentationTimeStamp)
         if presentationTimeStamp >= stingersOutTransitionStartPresentationTimeStamp {
             stingersState = .end
         }
-        return getReplayImage(presentationTimeStamp, image) ?? image
+        return makeBackgroundOutput(getReplayImage(presentationTimeStamp))
     }
 
-    private func executeStingersEnd(_ image: CIImage, _ presentationTimeStamp: Double) -> CIImage {
-        let backgroundImage = getStingersBackgroundImage(image, presentationTimeStamp)
+    private func updateStingersEnd(_ presentationTimeStamp: Double) -> ReplayEffectOutput {
+        let backgroundImage = getStingersBackgroundImage(presentationTimeStamp)
         let offset = presentationTimeStamp - stingersOutTransitionStartPresentationTimeStamp
         if let stingerImage = stingersOutReader?.getImage(offset: offset)?.image {
-            return stingerImage.composited(over: backgroundImage)
+            return .stinger(stingerImage, backgroundImage)
         } else {
             replayCompleted()
-            return backgroundImage
+            return makeBackgroundOutput(backgroundImage)
         }
     }
 
-    private func getStingersBackgroundImage(_ image: CIImage, _ presentationTimeStamp: Double) -> CIImage {
+    private func makeBackgroundOutput(_ replayImage: EffectImageCiImage?) -> ReplayEffectOutput {
+        guard let replayImage else {
+            return .background
+        }
+        return .replay(replayImage)
+    }
+
+    private func getStingersBackgroundImage(_ presentationTimeStamp: Double) -> EffectImageCiImage? {
         if presentationTimeStamp < stingersInTransitionPointPresentationTimeStamp {
-            return image
+            return nil
         } else if presentationTimeStamp > stingersOutTransitionPointPresentationTimeStamp {
             updateStatus(offset: duration / speed)
-            return image
+            return nil
         } else {
-            return getReplayImage(presentationTimeStamp, image) ?? image
+            return getReplayImage(presentationTimeStamp)
         }
     }
 
-    private func getReplayImage(_ presentationTimeStamp: Double, _ image: CIImage) -> CIImage? {
+    private func getReplayImage(_ presentationTimeStamp: Double) -> EffectImageCiImage? {
         let offset = presentationTimeStamp - stingersInTransitionPointPresentationTimeStamp
         updateStatus(offset: offset)
-        return scaleReplay(reader.getImage(offset: offset * speed).image, image)
+        return reader.getImage(offset: offset * speed).image
     }
 
     private func updateCancelled(_ presentationTimeStamp: Double) {
@@ -261,13 +356,5 @@ extension ReplayEffect {
 
     private func reportBadStingerVideo() {
         delegate?.replayEffectError(message: String(localized: "Bad replay stinger video"))
-    }
-
-    private func scaleReplay(_ replayImage: CIImage?, _ image: CIImage) -> CIImage? {
-        if replayImage?.extent != image.extent {
-            return replayImage?.scaledTo(size: image.extent.size)
-        } else {
-            return replayImage
-        }
     }
 }

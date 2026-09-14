@@ -1,19 +1,23 @@
 import WebKit
 
 private func moblinScript() -> String {
-    return loadStringResource(name: "moblin", ext: "js")
+    loadStringResource(name: "moblin", ext: "js")
 }
 
 private enum PublishMessage: Codable {
     case videoPlaying(value: Bool)
+    case log(message: String)
 }
 
 private enum SubscribeTopic: Codable {
     case chat(prefix: String?)
+    case speechToText
 }
 
 private enum Message: Codable {
     case chat(message: ChatMessage)
+    case speechToText(position: Int, text: String)
+    case speechToTextClear
 }
 
 private struct ChatMessage: Codable {
@@ -45,7 +49,7 @@ private enum MessageToBrowser: Codable {
     case message(data: Message)
 
     func toJson() -> String? {
-        return try? String(bytes: JSONEncoder().encode(self), encoding: .utf8)
+        try? String(bytes: JSONEncoder().encode(self), encoding: .utf8)
     }
 }
 
@@ -55,20 +59,23 @@ private struct Chat {
 
 private class Subscriptions {
     var chat: Chat?
+    var speechToText: Bool = false
 }
 
+@MainActor
 protocol BrowserEffectServerDelegate: AnyObject {
     func browserEffectServerVideoPlaying()
     func browserEffectServerVideoEnded()
 }
 
+@MainActor
 class BrowserEffectServer: NSObject {
     weak var webView: WKWebView?
     private let subscriptions = Subscriptions()
     private let pingTimer = SimpleTimer(queue: .main)
     private var gotPing = true
     private let moblinAccess: Bool
-    weak var delegate: BrowserEffectServerDelegate?
+    weak var delegate: (any BrowserEffectServerDelegate)?
 
     init(configuration: WKWebViewConfiguration, moblinAccess: Bool) {
         self.moblinAccess = moblinAccess
@@ -103,6 +110,20 @@ class BrowserEffectServer: NSObject {
         send(message: .message(data: .chat(message: .init(message: post))))
     }
 
+    func sendSpeechToText(position: Int, text: String) {
+        guard subscriptions.speechToText else {
+            return
+        }
+        send(message: .message(data: .speechToText(position: position, text: text)))
+    }
+
+    func sendSpeechToTextClear() {
+        guard subscriptions.speechToText else {
+            return
+        }
+        send(message: .message(data: .speechToTextClear))
+    }
+
     private func handlePingTimer() {
         if !gotPing {
             logger.info("browser-effect-server: Ping timeout")
@@ -117,7 +138,7 @@ class BrowserEffectServer: NSObject {
         }
         let data = message.utf8Data.base64EncodedString()
         webView?.evaluateJavaScript("""
-        moblin.handleMessage(window.atob("\(data)"))
+        moblin.handleMessage("\(data)")
         """)
     }
 
@@ -149,6 +170,8 @@ class BrowserEffectServer: NSObject {
             } else {
                 delegate?.browserEffectServerVideoEnded()
             }
+        case let .log(message):
+            logger.info("browser-effect-server: Log \(message)")
         }
     }
 
@@ -159,6 +182,8 @@ class BrowserEffectServer: NSObject {
         switch topic {
         case let .chat(prefix: prefix):
             subscriptions.chat = .init(prefix: prefix)
+        case .speechToText:
+            subscriptions.speechToText = true
         }
     }
 }

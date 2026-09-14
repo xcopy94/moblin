@@ -3,19 +3,19 @@ import Foundation
 
 extension Model {
     func rtspCameras() -> [Camera] {
-        return database.rtspClient.streams.map { stream in
+        database.rtspClient.streams.map { stream in
             Camera(id: stream.id.uuidString, name: stream.camera())
         }
     }
 
     func getRtspStream(id: UUID) -> SettingsRtspClientStream? {
-        return database.rtspClient.streams.first { stream in
+        database.rtspClient.streams.first { stream in
             stream.id == id
         }
     }
 
     func getRtspStream(idString: String) -> SettingsRtspClientStream? {
-        return database.rtspClient.streams.first { stream in
+        database.rtspClient.streams.first { stream in
             idString == stream.id.uuidString
         }
     }
@@ -30,6 +30,7 @@ extension Model {
                                     url: url,
                                     latency: stream.latencySeconds(),
                                     transport: stream.transport,
+                                    softwareDecoding: database.ingestsSoftwareVideoDecoding,
                                     delegate: self)
             client.start()
             ingests.rtsp.append(client)
@@ -61,7 +62,7 @@ extension Model {
     }
 }
 
-extension Model: RtspClientDelegate {
+extension Model: @preconcurrency RtspClientDelegate {
     func rtspClientErrorToast(title: String) {
         makeErrorToastMain(title: title)
     }

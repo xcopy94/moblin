@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 private let rtmpExamples: [(LocalizedStringKey, String)] = [
     ("Twitch", "rtmp://arn03.contribute.live-video.net/app/live_123321_sdfopjfwjfpawjefpjawef"),
     ("YouTube", "rtmp://a.rtmp.youtube.com/live2/1bk2-0d03-9683-7k65-e4d3"),
@@ -8,6 +9,7 @@ private let rtmpExamples: [(LocalizedStringKey, String)] = [
     ("RTMP server", "rtmp://foobar.org:3321/app/5678"),
 ]
 
+@MainActor
 private let srtExamples: [(LocalizedStringKey, String)] = [
     ("OBS Media Source (SRT)", "srt://134.20.342.12:5000"),
     ("BELABOX cloud SRTLA", "srtla://uk.srt.belabox.net:5000?streamid=NtlPUqXGFV4Bcm448wgc4fUuLdvDB3"),
@@ -16,9 +18,15 @@ private let srtExamples: [(LocalizedStringKey, String)] = [
     ("SRT Live Server (SLS)", "srt://120.12.32.12:4000?streamid=publish/live/feed"),
 ]
 
-private let whipExamples: [(LocalizedStringKey, String)] = [
+@MainActor
+let whipExamples: [(LocalizedStringKey, String)] = [
     ("MediaMTX WHIP", "whip://120.12.32.12:8889/mystream/whip"),
     ("MESHCAST.IO WHIP", "whips://de1.meshcast.io/whip/mystream"),
+]
+
+@MainActor
+private let mobcamExamples: [(LocalizedStringKey, String)] = [
+    ("Computer over USB cable", "mobcam://localhost:\(DefaultTcpPorts.mobcamStream)"),
 ]
 
 struct StreamUrlSettingsView: View {
@@ -26,13 +34,12 @@ struct StreamUrlSettingsView: View {
     @ObservedObject var stream: SettingsStream
 
     var body: some View {
-        UrlSettingsView(model: model,
-                        disabled: model.isLive || model.isRecording,
+        UrlSettingsView(disabled: model.isLive || model.isRecording,
                         url: $stream.url,
                         value: stream.url,
                         placeholder: "srtla://foobar.org:4432",
                         allowedSchemes: nil,
-                        examples: rtmpExamples + srtExamples + whipExamples,
+                        examples: rtmpExamples + srtExamples + whipExamples + mobcamExamples,
                         onSubmitted: {
                             model.reloadStreamIfEnabled(stream: stream)
                         })
@@ -45,8 +52,7 @@ struct StreamMultiStreamingUrlView: View {
     @ObservedObject var destination: SettingsStreamMultiStreamingDestination
 
     var body: some View {
-        UrlSettingsView(model: model,
-                        disabled: model.isLive || model.isRecording,
+        UrlSettingsView(disabled: model.isLive || model.isRecording,
                         url: $destination.url,
                         value: destination.url,
                         placeholder: "rtmp://foobar.org:3321/app/5678",

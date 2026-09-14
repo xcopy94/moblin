@@ -3,13 +3,29 @@ import SwiftUI
 struct ChatMessageEmote: Identifiable {
     let id = UUID()
     let url: URL
+    var stillUrl: URL?
     let range: ClosedRange<Int>
+    var isGif = false
+}
+
+struct ChatPostUrl: Codable {
+    let moving: URL?
+    let still: URL?
+
+    func url(animated: Bool) -> URL? {
+        if animated {
+            moving ?? still
+        } else {
+            still ?? moving
+        }
+    }
 }
 
 struct ChatPostSegment: Identifiable, Codable {
     let id: Int
     var text: String?
-    var url: URL?
+    var url: ChatPostUrl?
+    var bigGifUrl: ChatPostUrl?
 }
 
 func makeChatPostTextSegments(text: String) -> [ChatPostSegment] {
@@ -27,18 +43,21 @@ func makeChatPostTextSegments(text: String, id: inout Int) -> [ChatPostSegment] 
 }
 
 enum ChatHighlightKind: Codable {
-    case redemption
     case other
+    case redemption
     case firstMessage
     case newFollower
     case reply
+    case moderator
+    case remoteControlAssistant
+    case gigantifiedEmote
 }
 
 struct ChatHighlight {
     let kind: ChatHighlightKind
     let barColor: Color
     let image: String
-    let titleSegments: [ChatPostSegment]
+    let titleSegments: [ChatPostSegment]?
 
     static func makeReply(user: String, segments: [ChatPostSegment]) -> ChatHighlight {
         let prefixText = String(localized: "Replying to \(user):")
@@ -51,11 +70,10 @@ struct ChatHighlight {
             let segmentLength = textLength + emoteLength
             if totalLength + segmentLength > 65 {
                 let remainingLength = 65 - totalLength
-                let truncatedText: String
-                if remainingLength > 3, let text = segment.text {
-                    truncatedText = String(text.prefix(remainingLength - 3)) + "..."
+                let truncatedText = if remainingLength > 3, let text = segment.text {
+                    String(text.prefix(remainingLength - 3)) + "..."
                 } else {
-                    truncatedText = "..."
+                    "..."
                 }
                 replySegments.append(ChatPostSegment(id: id, text: truncatedText))
                 break
@@ -65,13 +83,13 @@ struct ChatHighlight {
             id += 1
         }
         return ChatHighlight(kind: .reply,
-                             barColor: .purple,
+                             barColor: .clear,
                              image: "arrowshape.turn.up.left",
                              titleSegments: replySegments)
     }
 
     static func makeAnnouncement() -> ChatHighlight {
-        return ChatHighlight(
+        ChatHighlight(
             kind: .other,
             barColor: .green,
             image: "horn.blast",
@@ -80,7 +98,7 @@ struct ChatHighlight {
     }
 
     static func makeFirstMessage() -> ChatHighlight {
-        return ChatHighlight(
+        ChatHighlight(
             kind: .firstMessage,
             barColor: .yellow,
             image: "bubble.left",
@@ -89,7 +107,7 @@ struct ChatHighlight {
     }
 
     static func makePaidMessage(amount: String) -> ChatHighlight {
-        return ChatHighlight(
+        ChatHighlight(
             kind: .other,
             barColor: .orange,
             image: "message",
@@ -98,7 +116,7 @@ struct ChatHighlight {
     }
 
     static func makePaidSticker(amount: String) -> ChatHighlight {
-        return ChatHighlight(
+        ChatHighlight(
             kind: .other,
             barColor: .green,
             image: "doc.plaintext",
@@ -107,14 +125,14 @@ struct ChatHighlight {
     }
 
     static func makeMember() -> ChatHighlight {
-        return ChatHighlight(kind: .other,
-                             barColor: .blue,
-                             image: "medal",
-                             titleSegments: makeChatPostTextSegments(text: String(localized: "Member")))
+        ChatHighlight(kind: .other,
+                      barColor: .blue,
+                      image: "medal",
+                      titleSegments: makeChatPostTextSegments(text: String(localized: "Member")))
     }
 
     static func makeGiftedMemberships() -> ChatHighlight {
-        return ChatHighlight(
+        ChatHighlight(
             kind: .other,
             barColor: .blue,
             image: "gift",
@@ -122,19 +140,60 @@ struct ChatHighlight {
         )
     }
 
+    static func makeJewels() -> ChatHighlight {
+        ChatHighlight(
+            kind: .other,
+            barColor: .blue,
+            image: "diamond",
+            titleSegments: makeChatPostTextSegments(text: String(localized: "Jewels"))
+        )
+    }
+
+    static func makeGigantifiedEmote() -> ChatHighlight {
+        ChatHighlight(
+            kind: .gigantifiedEmote,
+            barColor: .purple,
+            image: "arrow.up.backward.and.arrow.down.forward.square",
+            titleSegments: makeChatPostTextSegments(text: String(localized: "Gigantified emote"))
+        )
+    }
+
+    static func makeModerator() -> ChatHighlight {
+        ChatHighlight(
+            kind: .moderator,
+            barColor: .green,
+            image: "",
+            titleSegments: nil
+        )
+    }
+
+    static func makeRemoteControlAssistant() -> ChatHighlight {
+        ChatHighlight(
+            kind: .remoteControlAssistant,
+            barColor: .green,
+            image: "person.wave.2",
+            titleSegments: makeChatPostTextSegments(text: String(localized: "Remote control assistant"))
+        )
+    }
+
     func toWatchProtocol() -> WatchProtocolChatHighlight {
-        let watchProtocolKind: WatchProtocolChatHighlightKind
-        switch kind {
+        let watchProtocolKind: WatchProtocolChatHighlightKind = switch kind {
         case .redemption:
-            watchProtocolKind = .redemption
+            .redemption
         case .other:
-            watchProtocolKind = .other
+            .other
         case .newFollower:
-            watchProtocolKind = .redemption
+            .redemption
         case .firstMessage:
-            watchProtocolKind = .other
+            .other
         case .reply:
-            watchProtocolKind = .reply
+            .reply
+        case .moderator:
+            .moderator
+        case .remoteControlAssistant:
+            .other
+        case .gigantifiedEmote:
+            .other
         }
         let barColor = barColor.toRgb() ?? .init(red: 0, green: 255, blue: 0)
         return WatchProtocolChatHighlight(
@@ -145,16 +204,20 @@ struct ChatHighlight {
         )
     }
 
-    func titleNoEmotes() -> String {
-        return titleSegments.compactMap { $0.text }.joined()
+    func titleNoEmotes() -> String? {
+        titleSegments?.compactMap(\.text).joined()
     }
 
     func messageColor(defaultColor: Color = .white) -> Color {
         if kind == .reply {
-            return .gray
+            .gray
         } else {
-            return defaultColor
+            defaultColor
         }
+    }
+
+    func isAlert() -> Bool {
+        kind != .reply
     }
 }
 
@@ -166,13 +229,9 @@ class ChatPostState: ObservableObject {
     }
 }
 
-struct ChatPost: Identifiable, Equatable {
+struct ChatPost: Identifiable, Equatable, @unchecked Sendable {
     static func == (lhs: ChatPost, rhs: ChatPost) -> Bool {
-        return lhs.id == rhs.id
-    }
-
-    func isRedemption() -> Bool {
-        return highlight?.kind == .redemption || highlight?.kind == .newFollower
+        lhs.id == rhs.id
     }
 
     var id: Int
@@ -195,12 +254,29 @@ struct ChatPost: Identifiable, Equatable {
     let sourceChannelIcon: URL?
     let state: ChatPostState
 
+    func isRedemption() -> Bool {
+        switch highlight?.kind {
+        case .other:
+            true
+        case .redemption:
+            true
+        case .newFollower:
+            true
+        default:
+            false
+        }
+    }
+
+    func isBigGif() -> Bool {
+        segments.first?.bigGifUrl != nil
+    }
+
     func text() -> String {
-        return segments.filter { $0.text != nil }.map { $0.text! }.joined(separator: "").trim()
+        segments.filter { $0.text != nil }.map { $0.text! }.joined(separator: "").trim()
     }
 
     func isRedLine() -> Bool {
-        return user == nil
+        user == nil
     }
 
     func displayName(nicknames: SettingsChatNicknames, displayStyle: SettingsChatDisplayStyle) -> String {
@@ -232,5 +308,21 @@ struct ChatPost: Identifiable, Equatable {
             return nickname
         }
         return displayName
+    }
+}
+
+extension ChatHighlight {
+    init(remoteControl highlight: RemoteControlChatHighlight) {
+        kind = highlight.kind
+        barColor = highlight.barColor.color()
+        image = highlight.image
+        titleSegments = highlight.titleSegments
+    }
+
+    func toRemoteControl() -> RemoteControlChatHighlight {
+        RemoteControlChatHighlight(kind: kind,
+                                   barColor: barColor.toRgb() ?? .init(red: 0, green: 255, blue: 0),
+                                   image: image,
+                                   titleSegments: titleSegments)
     }
 }

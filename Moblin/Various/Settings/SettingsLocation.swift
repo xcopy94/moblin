@@ -10,9 +10,9 @@ class SettingsPrivacyRegion: Codable, Identifiable {
 
 private func formatMeters(value: Int) -> String {
     if value == 1 {
-        return String(localized: "\(value) meter")
+        String(localized: "\(value) meter")
     } else {
-        return String(localized: "\(value) meters")
+        String(localized: "\(value) meters")
     }
 }
 
@@ -24,11 +24,11 @@ enum SettingsLocationDesiredAccuracy: Codable, CaseIterable {
     func toString() -> String {
         switch self {
         case .best:
-            return String(localized: "Best")
+            String(localized: "Best")
         case .nearestTenMeters:
-            return formatMeters(value: 10)
+            formatMeters(value: 10)
         case .hundredMeters:
-            return formatMeters(value: 100)
+            formatMeters(value: 100)
         }
     }
 }
@@ -47,23 +47,23 @@ enum SettingsLocationDistanceFilter: Codable, CaseIterable {
     func toString() -> String {
         switch self {
         case .none:
-            return String(localized: "None")
+            String(localized: "None")
         case .oneMeter:
-            return formatMeters(value: 1)
+            formatMeters(value: 1)
         case .threeMeters:
-            return formatMeters(value: 3)
+            formatMeters(value: 3)
         case .fiveMeters:
-            return formatMeters(value: 5)
+            formatMeters(value: 5)
         case .tenMeters:
-            return formatMeters(value: 10)
+            formatMeters(value: 10)
         case .twentyMeters:
-            return formatMeters(value: 20)
+            formatMeters(value: 20)
         case .fiftyMeters:
-            return formatMeters(value: 50)
+            formatMeters(value: 50)
         case .hundredMeters:
-            return formatMeters(value: 100)
+            formatMeters(value: 100)
         case .twoHundredMeters:
-            return formatMeters(value: 200)
+            formatMeters(value: 200)
         }
     }
 }
@@ -72,24 +72,39 @@ class SettingsLocation: Codable, ObservableObject {
     @Published var enabled: Bool = false
     @Published var privacyRegions: [SettingsPrivacyRegion] = []
     @Published var distance: Double = 0.0
+    @Published var splitDistance: Double = 0.0
+    @Published var altitudeAscent: Double = 0.0
+    @Published var altitudeDescent: Double = 0.0
+    @Published var splitAltitudeAscent: Double = 0.0
+    @Published var splitAltitudeDescent: Double = 0.0
     @Published var resetWhenGoingLive: Bool = false
     @Published var desiredAccuracy: SettingsLocationDesiredAccuracy = .best
     @Published var distanceFilter: SettingsLocationDistanceFilter = .none
 
     enum CodingKeys: CodingKey {
-        case enabled,
-             privacyRegions,
-             distance,
-             resetWhenGoingLive,
-             desiredAccuracy,
-             distanceFilter
+        case enabled
+        case privacyRegions
+        case distance
+        case splitDistance
+        case altitudeAscent
+        case altitudeDescent
+        case splitAltitudeAscent
+        case splitAltitudeDescent
+        case resetWhenGoingLive
+        case desiredAccuracy
+        case distanceFilter
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.enabled, enabled)
         try container.encode(.privacyRegions, privacyRegions)
         try container.encode(.distance, distance)
+        try container.encode(.splitDistance, splitDistance)
+        try container.encode(.altitudeAscent, altitudeAscent)
+        try container.encode(.altitudeDescent, altitudeDescent)
+        try container.encode(.splitAltitudeAscent, splitAltitudeAscent)
+        try container.encode(.splitAltitudeDescent, splitAltitudeDescent)
         try container.encode(.resetWhenGoingLive, resetWhenGoingLive)
         try container.encode(.desiredAccuracy, desiredAccuracy)
         try container.encode(.distanceFilter, distanceFilter)
@@ -97,11 +112,16 @@ class SettingsLocation: Codable, ObservableObject {
 
     init() {}
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         enabled = container.decode(.enabled, Bool.self, false)
         privacyRegions = container.decode(.privacyRegions, [SettingsPrivacyRegion].self, [])
         distance = container.decode(.distance, Double.self, 0.0)
+        splitDistance = container.decode(.splitDistance, Double.self, 0.0)
+        altitudeAscent = container.decode(.altitudeAscent, Double.self, 0.0)
+        altitudeDescent = container.decode(.altitudeDescent, Double.self, 0.0)
+        splitAltitudeAscent = container.decode(.splitAltitudeAscent, Double.self, 0.0)
+        splitAltitudeDescent = container.decode(.splitAltitudeDescent, Double.self, 0.0)
         resetWhenGoingLive = container.decode(.resetWhenGoingLive, Bool.self, false)
         desiredAccuracy = container.decode(.desiredAccuracy, SettingsLocationDesiredAccuracy.self, .best)
         distanceFilter = container.decode(.distanceFilter, SettingsLocationDistanceFilter.self, .none)

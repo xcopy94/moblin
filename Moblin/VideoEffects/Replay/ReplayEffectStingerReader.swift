@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Collections
 import CoreImage
 
@@ -8,7 +8,7 @@ enum ReplayEffectStingerReaderSetupState {
     case failed
 }
 
-class ReplayEffectStingerReader {
+class ReplayEffectStingerReader: @unchecked Sendable {
     private var images: Deque<ReplayImage> = []
     private var reader: AVAssetReader?
     private var trackOutput: AVAssetReaderTrackOutput?
@@ -53,6 +53,7 @@ class ReplayEffectStingerReader {
         guard let trackOutput else {
             return
         }
+        nonisolated(unsafe)
         var newImages: [ReplayImage] = []
         for _ in 0 ... 10 {
             if let sampleBuffer = trackOutput.copyNextSampleBuffer(),
@@ -62,7 +63,7 @@ class ReplayEffectStingerReader {
                     .scaledTo(size: size)
                     .centered(size: size)
                     .composited(over: CIImage.clear.cropped(to: CGRect(origin: .zero, size: size)))
-                newImages.append(ReplayImage(image: image,
+                newImages.append(ReplayImage(image: image.toEffectImage(isOpaque: false),
                                              offset: sampleBuffer.presentationTimeStamp.seconds,
                                              isLast: false))
             } else {
@@ -81,14 +82,15 @@ class ReplayEffectStingerReader {
             self.reader = try? AVAssetReader(asset: asset)
             self.duration = asset.duration()
             asset.loadTracks(withMediaType: .video) { [weak self] tracks, error in
+                let self2 = self
                 replayEffectQueue.async {
-                    self?.loadVideoTrackCompletion(track: tracks?.first, error: error)
+                    self2?.loadVideoTrackCompletion(track: tracks?.first, error: error)
                 }
             }
         }
     }
 
-    private func loadVideoTrackCompletion(track: AVAssetTrack?, error: Error?) {
+    private func loadVideoTrackCompletion(track: AVAssetTrack?, error: (any Error)?) {
         guard error == nil, let track else {
             setupComplete(state: .failed)
             return

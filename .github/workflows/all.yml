@@ -8,22 +8,36 @@ jobs:
   all:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
       - name: Create user config
         run: |
           cp User.template.xcconfig Config/User.xcconfig
+      - name: Install just
+        run: |
+          brew install just
       - name: Source code styling
         run: |
           brew install swiftformat oxfmt
-          make style-check
+          just style-check
       - name: Linting
         run: |
           brew install swiftlint oxlint
-          make lint
+          just lint
       - name: Spell checking
         run: |
           brew install codespell
-          make spell-check
+          just spell-check
+      - name: Web remote control frontend
+        run: |
+          just web-remote-control-frontend-prepare
+          just web-remote-control-frontend-build
+          git diff --exit-code
       - name: Build
         run: |
           xcodebuild \

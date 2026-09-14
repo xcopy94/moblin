@@ -8,16 +8,16 @@ private struct SceneItemView: View {
 
     private func height() -> Double {
         if database.bigButtons {
-            return segmentHeightBig
+            segmentHeightBig
         } else {
-            return segmentHeight
+            segmentHeight
         }
     }
 
     var body: some View {
         ZStack {
             Text(scene.name)
-                .font(.subheadline)
+                .minimumScaleFactor(pickerLabelMinimumScaleFactor)
                 .frame(
                     width: min(sceneSegmentWidth, max((width - 20) / CGFloat(model.enabledScenes.count), 1)),
                     height: height()

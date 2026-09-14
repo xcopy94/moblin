@@ -27,11 +27,11 @@ enum RtmpServerClientConnectionState {
     case connected
 }
 
-class RtmpServerClient {
+class RtmpServerClient: @unchecked Sendable {
     private var connection: NWConnection
     private var state: ClientState
     private var chunkState: ChunkState
-    private var chunkSizeToClient = 128
+    var chunkSizeToClient = 128
     var chunkSizeFromClient = 128
     var windowAcknowledgementSize = 2_500_000
     private var chunkStreams: [UInt16: RtmpServerChunkStream]
@@ -53,11 +53,14 @@ class RtmpServerClient {
     private var basePresentationTimeStamp: Double
     private var inputBuffer = Data()
     private var receiveSize: Int = 0
+    private var receiveMinimumSize: Int = 0
     private var isProcessing = false
+    private let softwareDecoding: Bool
 
-    init(server: RtmpServer, connection: NWConnection) {
+    init(server: RtmpServer, connection: NWConnection, softwareDecoding: Bool) {
         self.server = server
         self.connection = connection
+        self.softwareDecoding = softwareDecoding
         state = .uninitialized
         chunkState = .basicHeaderFirstByte
         chunkStreams = [:]
@@ -115,6 +118,9 @@ class RtmpServerClient {
     }
 
     private func handleData(data: Data) {
+        guard connectionState != .idle else {
+            return
+        }
         switch state {
         case .uninitialized:
             handleDataUninitialized(data: data)
@@ -200,7 +206,9 @@ class RtmpServerClient {
             break
         }
         if chunkStreams[chunkStreamId] == nil {
-            chunkStreams[chunkStreamId] = RtmpServerChunkStream(client: self, streamId: chunkStreamId)
+            chunkStreams[chunkStreamId] = RtmpServerChunkStream(client: self,
+                                                                streamId: chunkStreamId,
+                                                                softwareDecoding: softwareDecoding)
         }
         chunkStream = chunkStreams[chunkStreamId]
         // logger.info("rtmp-server: \(chunkStreamId): Chunk message header format: \(format)")
@@ -316,6 +324,7 @@ class RtmpServerClient {
 
     func receiveData(size: Int) {
         receiveSize = size
+        receiveMinimumSize = size
         if isProcessing {
             return
         }
@@ -323,16 +332,19 @@ class RtmpServerClient {
     }
 
     private func receiveDataFromNetwork() {
-        connection.receive(minimumIncompleteLength: receiveSize, maximumLength: max(
-            receiveSize,
+        connection.receive(minimumIncompleteLength: receiveMinimumSize, maximumLength: max(
+            receiveMinimumSize,
             8192
-        )) { data, _, _, error in
+        )) { data, _, isComplete, error in
             if let data {
                 self.processReceivedData(data: data)
-                self.receiveDataFromNetwork()
             }
-            if let error {
+            if isComplete {
+                self.stopInternal(reason: error.map { "Error \($0)" } ?? "Connection closed")
+            } else if let error {
                 self.stopInternal(reason: "Error \(error)")
+            } else {
+                self.receiveDataFromNetwork()
             }
         }
     }
@@ -340,7 +352,7 @@ class RtmpServerClient {
     private func processReceivedData(data: Data) {
         // logger.info("rtmp-server: client: Got data \(data)")
         totalBytesReceived += UInt64(data.count)
-        server?.bitrateStats.add(bytesTransferred: data.count)
+        server?.bitrateStats.mutate { $0.add(bytesTransferred: data.count) }
         latestReceiveTime = .now
         inputBuffer.append(data)
         isProcessing = true
@@ -357,6 +369,7 @@ class RtmpServerClient {
             }
         }
         inputBuffer = inputBuffer.advanced(by: offset)
+        receiveMinimumSize = max(receiveSize - inputBuffer.count, 1)
         if totalBytesReceived - totalBytesReceivedAcked > windowAcknowledgementSize {
             sendAck()
             totalBytesReceivedAcked = totalBytesReceived

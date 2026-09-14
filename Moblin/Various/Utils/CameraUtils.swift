@@ -1,4 +1,4 @@
-import AVKit
+@preconcurrency import AVKit
 import CoreMotion
 
 extension AVCaptureDevice {
@@ -6,18 +6,18 @@ extension AVCaptureDevice {
         if hasUltraWideCamera {
             switch deviceType {
             case .builtInTripleCamera, .builtInDualWideCamera, .builtInUltraWideCamera:
-                return 0.5
+                0.5
             case .builtInTelephotoCamera:
-                return (virtualDeviceSwitchOverVideoZoomFactors.last?.floatValue ?? 10.0) / 2
+                (virtualDeviceSwitchOverVideoZoomFactors.last?.floatValue ?? 10.0) / 2
             default:
-                return 1.0
+                1.0
             }
         } else {
             switch deviceType {
             case .builtInTelephotoCamera:
-                return virtualDeviceSwitchOverVideoZoomFactors.last?.floatValue ?? 2.0
+                virtualDeviceSwitchOverVideoZoomFactors.last?.floatValue ?? 2.0
             default:
-                return 1.0
+                1.0
             }
         }
     }
@@ -68,19 +68,19 @@ extension AVCaptureDevice {
     private func baseName() -> String {
         switch deviceType {
         case .builtInTripleCamera:
-            return String(localized: "Triple (auto)")
+            String(localized: "Triple (auto)")
         case .builtInDualCamera:
-            return String(localized: "Dual (auto)")
+            String(localized: "Dual (auto)")
         case .builtInDualWideCamera:
-            return String(localized: "Wide dual (auto)")
+            String(localized: "Wide dual (auto)")
         case .builtInUltraWideCamera:
-            return String(localized: "Ultra wide")
+            String(localized: "Ultra wide")
         case .builtInWideAngleCamera:
-            return String(localized: "Wide")
+            String(localized: "Wide")
         case .builtInTelephotoCamera:
-            return String(localized: "Telephoto")
+            String(localized: "Telephoto")
         default:
-            return localizedName
+            localizedName
         }
     }
 }
@@ -97,11 +97,11 @@ let hasUltraWideFrontCamera = AVCaptureDevice
 func hasUltraWideCamera(position: AVCaptureDevice.Position) -> Bool {
     switch position {
     case .back:
-        return hasUltraWideBackCamera
+        hasUltraWideBackCamera
     case .front:
-        return hasUltraWideFrontCamera
+        hasUltraWideFrontCamera
     default:
-        return false
+        false
     }
 }
 
@@ -132,27 +132,27 @@ private func getBestFrontCameraDevice() -> AVCaptureDevice? {
 let bestFrontCameraDevice = getBestFrontCameraDevice()
 
 private func getBestBackCameraId() -> CameraId {
-    return bestBackCameraDevice?.uniqueID ?? ""
+    bestBackCameraDevice?.uniqueID ?? ""
 }
 
 let bestBackCameraId = getBestBackCameraId()
 
 private func getDefaultBackCameraPosition() -> SettingsSceneCameraPosition {
     if hasTripleBackCamera {
-        return .backTripleLowEnergy
+        .backTripleLowEnergy
     } else if hasWideDualBackCamera {
-        return .backWideDualLowEnergy
+        .backWideDualLowEnergy
     } else if hasDualBackCamera {
-        return .backDualLowEnergy
+        .backDualLowEnergy
     } else {
-        return .back
+        .back
     }
 }
 
 let defaultBackCameraPosition = getDefaultBackCameraPosition()
 
 private func getBestFrontCameraId() -> String {
-    return bestFrontCameraDevice?.uniqueID ?? ""
+    bestFrontCameraDevice?.uniqueID ?? ""
 }
 
 let bestFrontCameraId = getBestFrontCameraId()
@@ -188,28 +188,78 @@ func factorFromIso(device: AVCaptureDevice, iso: Float) -> Float {
     return factor.clamped(to: 0 ... 1)
 }
 
-private let minimumExposure: Double = 0.001
-private let maximumExposure: Double = 0.05
+private let shutterSpeeds = [
+    8000, 6400, 5000, 4000, 3200, 2500, 2000, 1600, 1250, 1000, 800, 640, 500, 400, 320, 250, 240,
+    200, 160, 125, 120, 100, 80, 60, 50, 48, 40, 30, 25, 24, 20, 15, 13, 10, 8,
+].map { CMTime(value: 1, timescale: CMTimeScale($0)) }
+private let slowestExposureWithoutFrameDuration = CMTime(value: 1, timescale: 20)
+
+func exposures(device: AVCaptureDevice) -> [CMTime] {
+    let fastest = device.activeFormat.minExposureDuration
+    var slowest = device.activeFormat.maxExposureDuration
+    let frameDuration = device.activeVideoMaxFrameDuration
+    if frameDuration.isValid, frameDuration.isNumeric, frameDuration.seconds > 0 {
+        slowest = min(slowest, frameDuration)
+    } else {
+        slowest = min(slowest, slowestExposureWithoutFrameDuration)
+    }
+    slowest = max(fastest, slowest)
+    let exposures = shutterSpeeds.filter { $0 >= fastest && $0 <= slowest }
+    if exposures.isEmpty {
+        return [slowest]
+    }
+    return exposures
+}
 
 func factorToExposure(device: AVCaptureDevice, factor: Float) -> CMTime {
-    let minExposureDuration = device.activeFormat.minExposureDuration
-    let maxExposureDuration = device.activeFormat.maxExposureDuration
-    let minExposure = max(minimumExposure, minExposureDuration.seconds)
-    var maxExposure = min(maximumExposure, maxExposureDuration.seconds)
-    maxExposure = max(minExposure, maxExposure)
-    let exposure = CMTime(seconds: minExposure + (maxExposure - minExposure) * Double(factor))
-    return exposure.clamped(to: minExposureDuration ... maxExposureDuration)
+    factorToExposure(exposures: exposures(device: device), factor: factor)
+}
+
+func factorToExposure(exposures: [CMTime], factor: Float) -> CMTime {
+    guard exposures.count > 1 else {
+        return exposures.first ?? CMTime(value: 1, timescale: 60)
+    }
+    let index = (factor.clamped(to: 0 ... 1) * Float(exposures.count - 1)).rounded()
+    return exposures[Int(index)]
 }
 
 func factorFromExposure(device: AVCaptureDevice, exposure: CMTime) -> Float {
-    let minExposure = max(minimumExposure, device.activeFormat.minExposureDuration.seconds)
-    var maxExposure = min(maximumExposure, device.activeFormat.maxExposureDuration.seconds)
-    maxExposure = max(minExposure, maxExposure)
-    var factor = Float((exposure.seconds - minExposure) / (maxExposure - minExposure))
-    if !factor.isFinite {
-        factor = 0
+    factorFromExposure(exposures: exposures(device: device), exposure: exposure)
+}
+
+func factorFromExposure(exposures: [CMTime], exposure: CMTime) -> Float {
+    guard exposures.count > 1, exposure.seconds > 0 else {
+        return 0
     }
-    return factor.clamped(to: 0 ... 1)
+    var bestIndex = 0
+    var bestDistance = Double.infinity
+    for (index, candidate) in exposures.enumerated() {
+        let distance = abs(log(candidate.seconds / exposure.seconds))
+        if distance < bestDistance {
+            bestDistance = distance
+            bestIndex = index
+        }
+    }
+    return Float(bestIndex) / Float(exposures.count - 1)
+}
+
+func exposureFactorStep(device: AVCaptureDevice) -> Float {
+    exposureFactorStep(exposures: exposures(device: device))
+}
+
+func exposureFactorStep(exposures: [CMTime]) -> Float {
+    guard exposures.count > 1 else {
+        return 1
+    }
+    return 1 / Float(exposures.count - 1)
+}
+
+func formatExposure(exposure: CMTime) -> String {
+    let seconds = exposure.seconds
+    guard seconds > 0, seconds.isFinite else {
+        return ""
+    }
+    return "1/\(Int((1 / seconds).rounded()))"
 }
 
 let minimumWhiteBalanceTemperature: Float = 2200
@@ -234,19 +284,19 @@ func factorFromWhiteBalance(device: AVCaptureDevice, gains: AVCaptureDevice.Whit
 
 extension AVCaptureDevice.WhiteBalanceGains {
     func clamped(maxGain: Float) -> AVCaptureDevice.WhiteBalanceGains {
-        return .init(redGain: redGain.clamped(to: 1 ... maxGain),
-                     greenGain: greenGain.clamped(to: 1 ... maxGain),
-                     blueGain: blueGain.clamped(to: 1 ... maxGain))
+        .init(redGain: redGain.clamped(to: 1 ... maxGain),
+              greenGain: greenGain.clamped(to: 1 ... maxGain),
+              blueGain: blueGain.clamped(to: 1 ... maxGain))
     }
 }
 
 func calcCameraAngle(gravity: CMAcceleration, portrait: Bool) -> Double {
     if portrait {
-        return -1 * (atan2(gravity.y, gravity.x) + .pi / 2)
+        -1 * (atan2(gravity.y, gravity.x) + .pi / 2)
     } else if gravity.x > 0 {
-        return atan2(-gravity.x, -gravity.y) + .pi / 2
+        atan2(-gravity.x, -gravity.y) + .pi / 2
     } else {
-        return atan2(gravity.x, gravity.y) + .pi / 2
+        atan2(gravity.x, gravity.y) + .pi / 2
     }
 }
 

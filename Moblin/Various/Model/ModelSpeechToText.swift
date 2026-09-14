@@ -18,7 +18,7 @@ extension Model {
         for widget in widgetsInCurrentScene(onlyEnabled: true) {
             switch widget.widget.type {
             case .text:
-                let languageIdentifiers = Set(widget.widget.text.subtitles.map { $0.identifier })
+                let languageIdentifiers = Set(widget.widget.text.subtitles.map(\.identifier))
                 for languageIdentifier in languageIdentifiers {
                     if let languageIdentifier {
                         addTranslator(targetIdentifier: languageIdentifier)
@@ -36,6 +36,9 @@ extension Model {
         speechToText = nil
         for textEffect in textEffects.values {
             textEffect.clearSubtitles()
+        }
+        for browserEffect in browserEffects.values {
+            browserEffect.sendSpeechToTextClear()
         }
         speechToTextTextAligners.removeAll()
     }
@@ -61,6 +64,10 @@ extension Model {
                 if widget.widget.alerts.needsSubtitles {
                     return true
                 }
+            case .browser:
+                if widget.widget.browser.moblinAccess, widget.widget.browser.speechToText {
+                    return true
+                }
             default:
                 break
             }
@@ -71,6 +78,9 @@ extension Model {
     func speechToTextClear() {
         for textEffect in textEffects.values {
             textEffect.clearSubtitles()
+        }
+        for browserEffect in browserEffects.values {
+            browserEffect.sendSpeechToTextClear()
         }
         speechToTextTextAligners.removeAll()
         speechToTextAlertMatchOffset = 0
@@ -102,6 +112,12 @@ extension Model {
         }
     }
 
+    private func speechToTextPartialResultBrowserWidgets(position: Int, text: String) {
+        for browserEffect in browserEffects.values {
+            browserEffect.sendSpeechToText(position: position, text: text)
+        }
+    }
+
     private func speechToTextPartialResultAlertsWidget(text: String) {
         guard text.count > speechToTextAlertMatchOffset else {
             return
@@ -127,7 +143,7 @@ extension Model {
     }
 }
 
-extension Model: SpeechToTextDelegate {
+extension Model: @preconcurrency SpeechToTextDelegate {
     func speechToTextPartialResult(position: Int, text: String) {
         speechToTextLatestPosition = position
         speechToTextLatestText = text
@@ -146,10 +162,11 @@ extension Model: SpeechToTextDelegate {
         }
         speechToTextPartialResultTextWidgets(position: position, text: text, languageIdentifier: nil)
         speechToTextPartialResultAlertsWidget(text: text)
+        speechToTextPartialResultBrowserWidgets(position: position, text: text)
     }
 }
 
-extension Model: TranslatorDelegate {
+extension Model: @preconcurrency TranslatorDelegate {
     func translatorTranslated(languageIdentifier: String, text: String) {
         let position: Int
         if let textAligner = speechToTextTextAligners[languageIdentifier] {

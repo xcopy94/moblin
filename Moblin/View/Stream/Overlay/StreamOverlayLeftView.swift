@@ -29,7 +29,7 @@ private struct ViewersLogoView: View {
     var body: some View {
         Image(platform.imageName())
             .resizable()
-            .aspectRatio(contentMode: .fit)
+            .scaledToFit()
             .padding(.vertical, 2)
             .frame(height: 18)
     }
@@ -88,6 +88,7 @@ private struct ChatStatusView: View {
             HStack(spacing: 2) {
                 if status.chatPlatformStatuses.isEmpty {
                     Text(status.statusChatText)
+                        .foregroundStyle(.white)
                 } else {
                     ForEach(status.chatPlatformStatuses, id: \.platform) {
                         ViewersLogoView(platform: $0.platform)
@@ -140,7 +141,6 @@ private struct ZoomView: View {
 
 private struct StatusesView: View {
     @EnvironmentObject var model: Model
-    // periphery:ignore
     @ObservedObject var show: SettingsShow
     @ObservedObject var status: StatusTopLeft
     @ObservedObject var mic: Mic
@@ -148,43 +148,43 @@ private struct StatusesView: View {
 
     func eventsColor() -> Color {
         if !model.isEventsConfigured() {
-            return .white
+            .white
         } else if model.isRemoteControlChatAndEvents(platform: nil) {
             if model.isRemoteControlStreamerConnected() {
-                return .white
+                .white
             } else {
-                return .red
+                .red
             }
         } else if model.isEventsConnected() {
-            return .white
+            .white
         } else {
-            return .red
+            .red
         }
     }
 
     func chatColor() -> Color {
         if !model.isChatConfigured() {
-            return .white
+            .white
         } else if model.isRemoteControlChatAndEvents(platform: nil) {
             if model.isRemoteControlStreamerConnected() {
-                return .white
+                .white
             } else {
-                return .red
+                .red
             }
-        } else if model.isChatConnected() && model.hasChatEmotes() {
-            return .white
+        } else if model.isChatConnected(), model.hasChatEmotes() {
+            .white
         } else {
-            return .red
+            .red
         }
     }
 
     func obsStatusColor() -> Color {
         if !model.isObsRemoteControlConfigured() {
-            return .white
+            .white
         } else if model.isObsConnected() {
-            return .white
+            .white
         } else {
-            return .red
+            .red
         }
     }
 

@@ -57,6 +57,7 @@ private struct TitleView: View {
 
 private struct SliderAndLockView: View {
     let model: Model
+    var step: Float = 0.01
     @Binding var value: Float
     @Binding var locked: Bool
     @Binding var editingLocked: Bool
@@ -69,7 +70,7 @@ private struct SliderAndLockView: View {
             Slider(
                 value: $value,
                 in: 0 ... 1,
-                step: 0.01,
+                step: step,
                 label: { EmptyView() },
                 onEditingChanged: onEditingChanged
             )
@@ -192,6 +193,7 @@ private struct ExposureView: View {
         TitleView(title: "EXPOSURE")
         if model.isCameraSupportingManualExposureAndIso() {
             SliderAndLockView(model: model,
+                              step: model.getExposureFactorStep(),
                               value: $camera.lockedExposure,
                               locked: $camera.isExposureAndIsoLocked,
                               editingLocked: $camera.editingLockedExposure,
@@ -251,7 +253,7 @@ private struct ButtonsView: View {
     }
 
     private func formatWhiteBalance() -> String {
-        return String(Int(minimumWhiteBalanceTemperature +
+        String(Int(minimumWhiteBalanceTemperature +
                 (maximumWhiteBalanceTemperature - minimumWhiteBalanceTemperature) * camera
                 .lockedWhiteBalance))
     }
@@ -263,22 +265,15 @@ private struct ButtonsView: View {
         return String(Int(factorToIso(device: device, factor: camera.lockedIso)))
     }
 
-    private func formatExposure() -> String {
-        guard let device = model.cameraDevice else {
-            return ""
-        }
-        return String(Int(factorToExposure(device: device, factor: camera.lockedExposure).seconds * 1000))
-    }
-
     private func formatFocus() -> String {
-        return String(Int(camera.lockedFocus * 100))
+        String(Int(camera.lockedFocus * 100))
     }
 
     private func height() -> Double {
         if database.bigButtons {
-            return segmentHeightBig
+            segmentHeightBig
         } else {
-            return segmentHeight
+            segmentHeight
         }
     }
 
@@ -323,7 +318,7 @@ private struct ButtonsView: View {
             } label: {
                 CameraSettingButtonView(
                     title: "EXP",
-                    value: formatExposure(),
+                    value: formatExposure(exposure: camera.exposure),
                     locked: camera.isExposureAndIsoLocked,
                     on: show.type == .exposure,
                     height: height

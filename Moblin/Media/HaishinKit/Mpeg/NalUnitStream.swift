@@ -8,7 +8,7 @@ struct NalUnitInfo {
     let dataLength: Int
 
     func dataOffset() -> Int {
-        return startCodeOffset + startCodeLength
+        startCodeOffset + startCodeLength
     }
 }
 
@@ -22,7 +22,6 @@ func getNalUnits(data: Data) -> [NalUnitInfo] {
     return nalUnits
 }
 
-// Should escape as well?
 func addNalUnitStartCodes(_ data: inout Data) {
     var index = 0
     while index + 3 < data.count {
@@ -32,7 +31,6 @@ func addNalUnitStartCodes(_ data: inout Data) {
     }
 }
 
-// Should unescape as well?
 func removeNalUnitStartCodes(_ data: inout Data, _ nalUnits: [NalUnitInfo]) {
     var numberOfThreeBytesStartCodes = nalUnits.count(where: { $0.startCodeLength != 4 })
     if numberOfThreeBytesStartCodes == 0 {
@@ -66,13 +64,13 @@ protocol NalUnit {
 }
 
 func readH264NalUnits(data: Data, nalUnits: [NalUnitInfo], filter: [AvcNalUnitType]) -> [AvcNalUnit] {
-    return readNalUnits(data, nalUnits) { byte in
+    readNalUnits(data, nalUnits) { byte in
         filter.contains(AvcNalUnitType(rawValue: byte & 0x1F) ?? .unspec)
     }
 }
 
 func readH265NalUnits(data: Data, nalUnits: [NalUnitInfo], filter: [HevcNalUnitType]) -> [HevcNalUnit] {
-    return readNalUnits(data, nalUnits) { byte in
+    readNalUnits(data, nalUnits) { byte in
         filter.contains(HevcNalUnitType(rawValue: (byte & 0x7E) >> 1) ?? .unspec)
     }
 }

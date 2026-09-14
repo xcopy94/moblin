@@ -33,9 +33,10 @@ protocol RemoteConnectionDelegate: AnyObject {
     func remoteConnectionOnSrtAck(sn: UInt32)
     func remoteConnectionOnSrtNak(sn: UInt32)
     func remoteConnectionOnSrtlaAck(sn: UInt32)
+    func remoteConnectionOnMoblinkReconnect(connection: RemoteConnection)
 }
 
-class RemoteConnection {
+class RemoteConnection: @unchecked Sendable {
     var type: NWInterface.InterfaceType?
     private var connection: NWConnection? {
         didSet {
@@ -49,8 +50,6 @@ class RemoteConnection {
     private var latestReceivedTime = ContinuousClock.now
     private var packetsInFlight: Set<UInt32> = []
     private var windowSize: Int = 0
-    private var numberOfNullPacketsSent: UInt64 = 0
-    private var numberOfNonNullPacketsSent: UInt64 = 0
     private var hasFullGroupId: Bool = false
     private var groupId = Data()
     private var priority: Float
@@ -77,29 +76,30 @@ class RemoteConnection {
     private(set) var destinationHost: NWEndpoint.Host?
     private(set) var destinationPort: NWEndpoint.Port?
     private let mpegtsPacketsPerPacket: Int
+    private let packetPadding: Bool
     var typeString: String {
         switch type {
         case .wifi:
-            return "WiFi"
+            "WiFi"
         case .wiredEthernet:
-            return networkInterfaces.names[interface?.name ?? ""] ?? interface?.name ?? "Ethernet"
+            networkInterfaces.names[interface?.name ?? ""] ?? interface?.name ?? "Ethernet"
         case .cellular:
-            return "Cellular"
+            "Cellular"
         default:
-            return relayName ?? "Any"
+            relayName ?? "Any"
         }
     }
 
     let relayId: UUID?
     private let relayName: String?
-    private var localEndpoint: NWEndpoint?
 
-    weak var delegate: RemoteConnectionDelegate?
+    weak var delegate: (any RemoteConnectionDelegate)?
     private var networkInterfaces: SrtlaNetworkInterfaces
 
     init(
         type: NWInterface.InterfaceType?,
         mpegtsPacketsPerPacket: Int,
+        packetPadding: Bool,
         interface: NWInterface?,
         networkInterfaces: SrtlaNetworkInterfaces,
         priority: Float,
@@ -108,6 +108,7 @@ class RemoteConnection {
     ) {
         self.type = type
         self.mpegtsPacketsPerPacket = mpegtsPacketsPerPacket
+        self.packetPadding = packetPadding
         self.interface = interface
         self.networkInterfaces = networkInterfaces
         self.priority = priority
@@ -137,10 +138,6 @@ class RemoteConnection {
         let params = NWParameters(dtls: .none)
         params.prohibitExpensivePaths = false
         params.requiredInterface = interface
-        if let localEndpoint = getLocalEndpointIfMoblink() {
-            params.requiredLocalEndpoint = localEndpoint
-            params.allowLocalEndpointReuse = true
-        }
         connection = NWConnection(host: destinationHost, port: destinationPort, using: params)
         connection!.stateUpdateHandler = handleStateUpdate(to:)
         connection!.start(queue: srtlaClientQueue)
@@ -181,7 +178,7 @@ class RemoteConnection {
     }
 
     func isEnabled() -> Bool {
-        return priority > 0
+        priority > 0
     }
 
     func sendSrtPacket(packet: Data) {
@@ -240,22 +237,13 @@ class RemoteConnection {
         guard state == .registered else {
             return
         }
-        var overhead = 0
-        let total = numberOfNullPacketsSent + numberOfNonNullPacketsSent
-        if total > 0 {
-            overhead = Int(100 * Double(numberOfNullPacketsSent) / Double(total))
-        }
-        numberOfNullPacketsSent = 0
-        numberOfNonNullPacketsSent = 0
-        if type == nil {
-            logger.debug("srtla: \(typeString): Overhead: \(overhead)%")
-        } else {
+        if type != nil {
             logger
                 .debug(
                     """
                     srtla: \(typeString): Score: \(score()), In flight: \
                     \(packetsInFlight.count), Window size: \(windowSize), \
-                    Priority: \(priority), Overhead: \(overhead) %
+                    Priority: \(priority)
                     """
                 )
         }
@@ -277,34 +265,13 @@ class RemoteConnection {
     }
 
     private func isMoblink() -> Bool {
-        return relayId != nil
-    }
-
-    private func setLocalEndpointIfMoblink() {
-        guard isMoblink() else {
-            return
-        }
-        guard let localEndpoint = connection?.currentPath?.localEndpoint else {
-            logger.info("srtla: \(typeString): Local endpoint missing")
-            return
-        }
-        self.localEndpoint = localEndpoint
-        logger.debug("srtla: \(typeString): Set local endpoint \(localEndpoint)")
-    }
-
-    private func getLocalEndpointIfMoblink() -> NWEndpoint? {
-        guard isMoblink(), let localEndpoint else {
-            return nil
-        }
-        logger.debug("srtla: \(typeString): Has local endpoint \(localEndpoint)")
-        return localEndpoint
+        relayId != nil
     }
 
     private func handleStateUpdate(to state: NWConnection.State) {
         logger.debug("srtla: \(typeString): State change to \(state)")
         switch state {
         case .ready:
-            setLocalEndpointIfMoblink()
             cancelAllTimers()
             connectTimer.startSingleShot(timeout: 5) {
                 self.reconnect(reason: "Connection timeout")
@@ -331,8 +298,12 @@ class RemoteConnection {
     }
 
     private func reconnect(reason: String) {
-        stop(reason: reason)
-        startInternal()
+        if isMoblink() {
+            delegate?.remoteConnectionOnMoblinkReconnect(connection: self)
+        } else {
+            stop(reason: reason)
+            startInternal()
+        }
     }
 
     private func receivePackets() {
@@ -359,13 +330,11 @@ class RemoteConnection {
         if isSrtDataPacket(packet: packet) {
             packetsInFlight.insert(getSrtSequenceNumber(packet: packet))
             var numberOfMpegTsPackets = (packet.count - 16) / MpegTsPacket.size
-            numberOfNonNullPacketsSent += UInt64(numberOfMpegTsPackets)
-            if numberOfMpegTsPackets < mpegtsPacketsPerPacket {
+            if packetPadding, numberOfMpegTsPackets < mpegtsPacketsPerPacket {
                 var paddedPacket = packet
                 while numberOfMpegTsPackets < mpegtsPacketsPerPacket {
                     paddedPacket.append(nullPacket)
                     numberOfMpegTsPackets += 1
-                    numberOfNullPacketsSent += 1
                 }
                 sendDataPacketInternal(packet: paddedPacket)
                 totalDataSentByteCount += UInt64(paddedPacket.count)
@@ -412,7 +381,7 @@ class RemoteConnection {
     }
 
     private func getKeepAliveTime() -> Int64 {
-        return keepAliveSendBaseTime.duration(to: .now).milliseconds
+        keepAliveSendBaseTime.duration(to: .now).milliseconds
     }
 
     private func handleSrtAck(packet: Data) {

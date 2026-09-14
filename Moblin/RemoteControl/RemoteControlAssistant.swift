@@ -12,6 +12,7 @@ protocol RemoteControlAssistantDelegate: AnyObject {
     func remoteControlAssistantStatus(general: RemoteControlStatusGeneral?,
                                       topLeft: RemoteControlStatusTopLeft?,
                                       topRight: RemoteControlStatusTopRight?)
+    func remoteControlAssistantStats(data: RemoteControlStats)
 }
 
 private struct RemoteControlRequestResponse {
@@ -19,7 +20,7 @@ private struct RemoteControlRequestResponse {
     let onError: (String) -> Void
 }
 
-class RemoteControlAssistant: NSObject {
+class RemoteControlAssistant: NSObject, @unchecked Sendable {
     private let port: UInt16
     private let password: String
     private var connected: Bool = false
@@ -29,7 +30,7 @@ class RemoteControlAssistant: NSObject {
     var connectionErrorMessage = ""
     private var streamerWebSocket: NWConnection?
     private var retryStartTimer = SimpleTimer(queue: .main)
-    private weak var delegate: RemoteControlAssistantDelegate?
+    private weak var delegate: (any RemoteControlAssistantDelegate)?
     private var streamerIdentified = false
     private var challenge = ""
     private var salt = ""
@@ -51,7 +52,7 @@ class RemoteControlAssistant: NSObject {
     init(
         port: UInt16,
         password: String,
-        delegate: RemoteControlAssistantDelegate
+        delegate: any RemoteControlAssistantDelegate
     ) {
         self.port = port
         self.password = password
@@ -72,7 +73,8 @@ class RemoteControlAssistant: NSObject {
         server = nil
         streamerWebSocket?.cancel()
         streamerWebSocket = nil
-        server = nil
+        connected = false
+        requests.removeAll()
         stopRetryStartTimer()
         twitchEventSub?.stop()
         twitchChat?.stop()
@@ -81,7 +83,7 @@ class RemoteControlAssistant: NSObject {
     }
 
     func isConnected() -> Bool {
-        return connected
+        connected
     }
 
     func getStatus(onSuccess: @escaping (
@@ -124,8 +126,12 @@ class RemoteControlAssistant: NSObject {
         performRequestNoResponseData(data: .setRecord(on: on), onSuccess: onSuccess)
     }
 
-    func setStream(on: Bool, onSuccess: @escaping () -> Void) {
-        performRequestNoResponseData(data: .setStream(on: on), onSuccess: onSuccess)
+    func setLive(on: Bool, onSuccess: @escaping () -> Void) {
+        performRequestNoResponseData(data: .setLive(on: on), onSuccess: onSuccess)
+    }
+
+    func setPreviewStream(on: Bool, onSuccess: @escaping () -> Void) {
+        performRequestNoResponseData(data: .setPreviewStream(on: on), onSuccess: onSuccess)
     }
 
     func setZoom(x: Float, onSuccess: @escaping () -> Void) {
@@ -140,7 +146,10 @@ class RemoteControlAssistant: NSObject {
         performRequestNoResponseData(data: .setMute(on: on), onSuccess: onSuccess)
     }
 
-    // periphery:ignore
+    func setStealthMode(on: Bool, onSuccess: @escaping () -> Void) {
+        performRequestNoResponseData(data: .setStealthMode(on: on), onSuccess: onSuccess)
+    }
+
     func setTorch(on: Bool, onSuccess: @escaping () -> Void) {
         performRequestNoResponseData(data: .setTorch(on: on), onSuccess: onSuccess)
     }
@@ -169,12 +178,28 @@ class RemoteControlAssistant: NSObject {
         performRequestNoResponseData(data: .moveToGimbalPreset(id: id), onSuccess: onSuccess)
     }
 
+    func startMacro(id: UUID, onSuccess: @escaping () -> Void) {
+        performRequestNoResponseData(data: .startMacro(id: id), onSuccess: onSuccess)
+    }
+
+    func stopMacro(id: UUID, onSuccess: @escaping () -> Void) {
+        performRequestNoResponseData(data: .stopMacro(id: id), onSuccess: onSuccess)
+    }
+
     func setRemoteSceneSettings(data: RemoteControlRemoteSceneSettings, onSuccess: @escaping () -> Void) {
         performRequestNoResponseData(data: .setRemoteSceneSettings(data: data), onSuccess: onSuccess)
     }
 
     func setRemoteSceneData(data: RemoteControlRemoteSceneData, onSuccess: @escaping () -> Void) {
         performRequestNoResponseData(data: .setRemoteSceneData(data: data), onSuccess: onSuccess)
+    }
+
+    func importSettings(data: Data, onSuccess: @escaping () -> Void, onError: @escaping (String) -> Void) {
+        performRequest(data: .importSettings(data: data)) { _ in
+            onSuccess()
+        } onError: { error in
+            onError(error)
+        }
     }
 
     func reloadBrowserWidgets(onSuccess: @escaping () -> Void) {
@@ -212,6 +237,14 @@ class RemoteControlAssistant: NSObject {
         performRequestNoResponseData(data: .stopStatus, onSuccess: {})
     }
 
+    func startStats(filter: RemoteControlStartStatsFilter? = nil) {
+        performRequestNoResponseData(data: .startStats(filter: filter), onSuccess: {})
+    }
+
+    func stopStats() {
+        performRequestNoResponseData(data: .stopStats, onSuccess: {})
+    }
+
     func whipPerform(url: String,
                      method: String,
                      headers: [SettingsHttpHeader],
@@ -239,6 +272,10 @@ class RemoteControlAssistant: NSObject {
 
     func setFilter(filter: RemoteControlFilter, on: Bool) {
         performRequestNoResponseData(data: .setFilter(filter: filter, on: on), onSuccess: {})
+    }
+
+    func sendMessage(text: String) {
+        performRequestNoResponseData(data: .sendMessage(text: text), onSuccess: {})
     }
 
     private func tryNextTwitchEventSubNotification() {
@@ -310,12 +347,12 @@ class RemoteControlAssistant: NSObject {
             guard let self else {
                 return
             }
-            if self.pongReceived {
-                self.pongReceived = false
-                self.streamerWebSocket?.sendWebSocket(data: nil, opcode: .ping)
+            if pongReceived {
+                pongReceived = false
+                streamerWebSocket?.sendWebSocket(data: nil, opcode: .ping)
             } else {
                 logger.info("remote-control-assistant: Ping timeout")
-                self.closeStreamer()
+                closeStreamer()
             }
         }
     }
@@ -380,6 +417,7 @@ class RemoteControlAssistant: NSObject {
         streamerWebSocket?.cancel()
         streamerWebSocket = nil
         connected = false
+        requests.removeAll()
         delegate?.remoteControlAssistantDisconnected()
     }
 
@@ -452,8 +490,7 @@ class RemoteControlAssistant: NSObject {
             tryNextTwitchEventSubNotification()
         } else {
             logger.info("remote-control-assistant: Streamer sent wrong password")
-            send(message: .identified(result: .wrongPassword))
-            closeStreamer()
+            sendAndClose(message: .identified(result: .wrongPassword))
         }
     }
 
@@ -470,6 +507,10 @@ class RemoteControlAssistant: NSObject {
             handleStatusEvent(general: general, topLeft: topLeft, topRight: topRight)
         case .scoreboard:
             break
+        case .golfScoreboard:
+            break
+        case let .stats(data: data):
+            delegate?.remoteControlAssistantStats(data: data)
         }
     }
 
@@ -477,7 +518,7 @@ class RemoteControlAssistant: NSObject {
         guard streamerIdentified else {
             throw "Streamer not identified"
         }
-        guard let request = requests[id] else {
+        guard let request = requests.removeValue(forKey: id) else {
             logger.debug("remote-control-assistant: Unexpected id in response")
             return
         }
@@ -604,6 +645,16 @@ class RemoteControlAssistant: NSObject {
         }
         streamerWebSocket?.sendWebSocket(data: text.data(using: .utf8), opcode: .text)
     }
+
+    private func sendAndClose(message: RemoteControlMessageToStreamer) {
+        guard let text = message.toJson(), let webSocket = streamerWebSocket else {
+            return
+        }
+        webSocket.sendWebSocket(data: text.utf8Data, opcode: .text, completion: .contentProcessed { _ in
+            webSocket.cancel()
+        })
+        streamerWebSocket = nil
+    }
 }
 
 extension RemoteControlAssistant: TwitchEventSubDelegate {
@@ -612,6 +663,12 @@ extension RemoteControlAssistant: TwitchEventSubDelegate {
     func twitchEventSubChannelFollow(event _: TwitchEventSubNotificationChannelFollowEvent) {}
 
     func twitchEventSubChannelSubscribe(event _: TwitchEventSubNotificationChannelSubscribeEvent) {}
+
+    func twitchEventSubChannelSubscriptionUpgrade(
+        event _: TwitchEventSubNotificationChannelSubscriptionUpgradeEvent
+    ) {}
+
+    func twitchEventSubChannelWatchStreak(event _: TwitchEventSubNotificationChannelWatchStreakEvent) {}
 
     func twitchEventSubChannelSubscriptionGift(
         event _: TwitchEventSubNotificationChannelSubscriptionGiftEvent
@@ -636,6 +693,20 @@ extension RemoteControlAssistant: TwitchEventSubDelegate {
     func twitchEventSubChannelHypeTrainEnd(event _: TwitchEventSubChannelHypeTrainEndEvent) {}
 
     func twitchEventSubChannelModerate(event _: TwitchEventSubChannelModerateEvent) {}
+
+    func twitchEventSubChannelPollBegin(event _: TwitchEventSubChannelPollEvent) {}
+
+    func twitchEventSubChannelPollProgress(event _: TwitchEventSubChannelPollEvent) {}
+
+    func twitchEventSubChannelPollEnd(event _: TwitchEventSubChannelPollEvent) {}
+
+    func twitchEventSubChannelPredictionBegin(event _: TwitchEventSubChannelPredictionEvent) {}
+
+    func twitchEventSubChannelPredictionProgress(event _: TwitchEventSubChannelPredictionEvent) {}
+
+    func twitchEventSubChannelPredictionLock(event _: TwitchEventSubChannelPredictionEvent) {}
+
+    func twitchEventSubChannelPredictionEnd(event _: TwitchEventSubChannelPredictionEvent) {}
 
     func twitchEventSubUnauthorized() {
         logger.info("remote-control-assistant: twitch-event-sub: Twitch not authorized")
@@ -664,7 +735,7 @@ extension RemoteControlAssistant: TwitchChatDelegate {
         isSubscriber: Bool,
         isModerator: Bool,
         bits: String?,
-        highlight _: ChatHighlight?,
+        highlight: ChatHighlight?,
         sourceChannelIcon _: URL?
     ) {
         let timestamp = digitalClockFormatter.string(from: Date())
@@ -682,7 +753,8 @@ extension RemoteControlAssistant: TwitchChatDelegate {
                                                isModerator: isModerator,
                                                isSubscriber: isSubscriber,
                                                isOwner: false,
-                                               bits: bits)
+                                               bits: bits,
+                                               highlight: highlight?.toRemoteControl())
         chatMessageHistory.append(message)
         if chatMessageHistory.count > 100 {
             chatMessageHistory.removeFirst()

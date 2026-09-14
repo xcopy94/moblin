@@ -1,5 +1,5 @@
 {
-  "originHash" : "28372b62409b078c82307b90176be36c0e6c3fb8799c4cb0bb489192a485fa55",
+  "originHash" : "57f8a2424c79da548cbb9298fdb239bd727e5c166369f054b34dafd2ece1aaa9",
   "pins" : [
     {
       "identity" : "alerttoast",
@@ -15,8 +15,17 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/openid/AppAuth-iOS.git",
       "state" : {
-        "revision" : "145104f5ea9d58ae21b60add007c33c1cc0c948e",
-        "version" : "2.0.0"
+        "revision" : "a7caeda164dc5108bf4649472b28a5af65dc6f33",
+        "version" : "2.1.0"
+      }
+    },
+    {
+      "identity" : "ayagamiswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/eerimoq/AyagamiSwift",
+      "state" : {
+        "branch" : "main",
+        "revision" : "a1424faf9fec767ba13644d179ff9ebe0bab2de9"
       }
     },
     {
@@ -24,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Spillmaker/BlackSharkLib.swift",
       "state" : {
-        "revision" : "6e724c114638fe48c0212052678fe738643a7f38",
-        "version" : "1.2.2"
+        "revision" : "f3411d01200e64aa76f605fd689f93d819133d39",
+        "version" : "1.3.0"
       }
     },
     {
@@ -43,7 +52,16 @@
       "location" : "https://github.com/eerimoq/DataChannel",
       "state" : {
         "branch" : "main",
-        "revision" : "85316be8ab11dd0e76e2df604d685934ab697ee7"
+        "revision" : "17f2aa22dfdc28c0ac4f0adee7cc02e8162060bb"
+      }
+    },
+    {
+      "identity" : "fuzzymatchingswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/seanoshea/FuzzyMatchingSwift",
+      "state" : {
+        "revision" : "87b14bd5780a73214d45025f678d66160af45a2c",
+        "version" : "0.11.1"
       }
     },
     {
@@ -51,8 +69,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/SDWebImage/libwebp-Xcode.git",
       "state" : {
-        "revision" : "0d60654eeefd5d7d2bef3835804892c40225e8b2",
-        "version" : "1.5.0"
+        "revision" : "2b5256c29ff4e20f2a0d5ee863b62b1a22144434",
+        "version" : "1.6.0"
       }
     },
     {
@@ -60,8 +78,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/eerimoq/MetalPetal",
       "state" : {
-        "branch" : "master",
-        "revision" : "f9b78897bd4214bb097f352a1bde0a4f4a1e2ddb"
+        "branch" : "main",
+        "revision" : "8787ff999db2f3942541eaa480673d26cdfdbd10"
       }
     },
     {
@@ -79,7 +97,7 @@
       "location" : "https://github.com/eerimoq/Rist",
       "state" : {
         "branch" : "main",
-        "revision" : "e60e1c53c0f60321a103e4cbf120a710912da28a"
+        "revision" : "5bbccbc71852367be9e7ff463e2638b409e04589"
       }
     },
     {
@@ -115,7 +133,16 @@
       "location" : "https://github.com/eerimoq/SrtSwift",
       "state" : {
         "branch" : "main",
-        "revision" : "7152305fd14439dcb5e7e13a4e4009f90c3b6968"
+        "revision" : "8e1e72bf43757e34a26b51df921d6eb330be334b"
+      }
+    },
+    {
+      "identity" : "streamdeck-kit-ipad",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/elgatosf/streamdeck-kit-ipad.git",
+      "state" : {
+        "revision" : "23c3770bd51aa016a681d88d108cb0ab712171d5",
+        "version" : "1.3.0"
       }
     },
     {
@@ -123,8 +150,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-collections.git",
       "state" : {
-        "revision" : "6675bc0ff86e61436e615df6fc5174e043e57924",
-        "version" : "1.4.1"
+        "revision" : "a0cb0954ecb21e4e31b0070e6ed5674e8556685a",
+        "version" : "1.6.0"
       }
     },
     {
@@ -132,8 +159,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-protobuf.git",
       "state" : {
-        "revision" : "a008af1a102ff3dd6cc3764bb69bf63226d0f5f6",
-        "version" : "1.36.1"
+        "revision" : "55d7a1cc5666b85c13464aea1c4b4a90feccb4c8",
+        "version" : "1.38.1"
       }
     },
     {
@@ -141,8 +168,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-system.git",
       "state" : {
-        "revision" : "7c6ad0fc39d0763e0b699210e4124afd5041c5df",
-        "version" : "1.6.4"
+        "revision" : "869129b7bf4ecc57b97d0193ad29690ca2134750",
+        "version" : "1.8.1"
       }
     },
     {
@@ -150,8 +177,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/adam-fowler/swift-zip-archive",
       "state" : {
-        "revision" : "b04d3d130b9a8b212db9d97da3b8853b024887be",
-        "version" : "0.6.4"
+        "revision" : "0958a719c924d2b3cb27cd7d9f76b4cfb04549f2",
+        "version" : "0.8.1"
       }
     },
     {
@@ -178,7 +205,7 @@
       "location" : "https://github.com/eerimoq/VRMKit",
       "state" : {
         "branch" : "main",
-        "revision" : "071e0bc6a0f4f0ba2385c05332b0adb172d0f7ec"
+        "revision" : "444d9403754d7cff3bdcd7283c2db8fb330ac619"
       }
     },
     {
@@ -195,8 +222,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/CoreOffice/XMLCoder",
       "state" : {
-        "revision" : "b2b5d72345bab9e1938a483cf862b498aeed3796",
-        "version" : "0.18.1"
+        "revision" : "42f62383dbcd074440cb1f6a750b9c02df9e7325",
+        "version" : "0.18.2"
       }
     }
   ],

@@ -15,15 +15,19 @@ protocol WhipServerDelegate: AnyObject {
     )
 }
 
-class WhipServer {
+class WhipServer: @unchecked Sendable {
     private var server: HttpServer?
     private var clients: [UUID: WhipServerClient] = [:]
-    private let delegate: WhipServerDelegate
+    private let delegate: any WhipServerDelegate
     var settings: SettingsWhipServer
-    private var bitrateStats = BitrateStats()
+    private let softwareDecoding: Bool
+    private let bitrateStats: Atomic<BitrateStats> = .init(BitrateStats())
+    private var numberOfClients: Atomic<Int> = .init(0)
+    private var connectedStreamIds: Atomic<[UUID]> = .init([])
 
-    init(settings: SettingsWhipServer, delegate: WhipServerDelegate) {
+    init(settings: SettingsWhipServer, softwareDecoding: Bool, delegate: any WhipServerDelegate) {
         self.settings = settings
+        self.softwareDecoding = softwareDecoding
         self.delegate = delegate
     }
 
@@ -40,24 +44,26 @@ class WhipServer {
     }
 
     func getNumberOfClients() -> Int {
-        return whipServerDispatchQueue.sync {
-            clients.count
-        }
+        numberOfClients.value
     }
 
     func updateStats() -> BitrateStatsInstant {
-        return whipServerDispatchQueue.sync {
-            bitrateStats.update()
+        nonisolated(unsafe)
+        var result: BitrateStatsInstant?
+        bitrateStats.mutate {
+            result = $0.update()
         }
+        return result!
     }
 
     func isStreamConnected(streamId: UUID) -> Bool {
-        return whipServerDispatchQueue.sync {
-            clients[streamId] != nil
-        }
+        connectedStreamIds.value.contains(streamId)
     }
 
-    func startClient(streamKey: String, sdpOffer: String, onCompleted: @escaping (String?) -> Void) {
+    func startClient(streamKey: String,
+                     sdpOffer: String,
+                     onCompleted: @escaping @MainActor (String?) -> Void)
+    {
         whipServerDispatchQueue.async {
             self.startClientInternal(streamKey: streamKey, sdpOffer: sdpOffer, onCompleted: onCompleted)
         }
@@ -78,6 +84,7 @@ class WhipServer {
             client.stop()
         }
         clients.removeAll()
+        clientsChanged()
         server?.stop()
         server = nil
         logger.info("whip-server: Stopped")
@@ -86,19 +93,26 @@ class WhipServer {
     private func startClientInternal(
         streamKey: String,
         sdpOffer: String,
-        onCompleted: @escaping (String?) -> Void
+        onCompleted: @escaping @MainActor (String?) -> Void
     ) {
         guard let stream = settings.streams.first(where: { $0.streamKey == streamKey }) else {
-            onCompleted(nil)
+            DispatchQueue.main.async {
+                onCompleted(nil)
+            }
             return
         }
         setupClient(stream: stream, sdpOffer: sdpOffer) { [weak self] sdpAnswer in
             guard let sdpAnswer else {
-                onCompleted(nil)
+                DispatchQueue.main.async {
+                    onCompleted(nil)
+                }
                 self?.clients.removeValue(forKey: stream.id)
+                self?.clientsChanged()
                 return
             }
-            onCompleted(sdpAnswer)
+            DispatchQueue.main.async {
+                onCompleted(sdpAnswer)
+            }
         }
     }
 
@@ -118,6 +132,7 @@ class WhipServer {
             guard let sdpAnswer else {
                 response.send(status: .notFound)
                 self?.clients.removeValue(forKey: stream.id)
+                self?.clientsChanged()
                 return
             }
             response.send(
@@ -136,11 +151,20 @@ class WhipServer {
         let client = WhipServerClient(streamId: stream.id,
                                       latency: stream.latencySeconds(),
                                       syncTimestamps: stream.syncTimestamps,
+                                      softwareDecoding: softwareDecoding,
                                       iceServers: [defaultStunServer],
                                       delegate: self)
         let streamId = client.streamId
         clients[streamId] = client
+        clientsChanged()
         client.handleOffer(sdpOffer: sdpOffer, completion: completion)
+    }
+
+    private func clientsChanged() {
+        let count = clients.count
+        numberOfClients.mutate { $0 = count }
+        let streamIds = Array(clients.keys)
+        connectedStreamIds.mutate { $0 = streamIds }
     }
 
     private func handleWhipSession(request: HttpServerRequest, response: HttpServerResponse) {
@@ -155,6 +179,7 @@ class WhipServer {
             return
         }
         if let client = clients.removeValue(forKey: streamId) {
+            clientsChanged()
             client.stop()
             delegate.whipServerOnPublishStop(streamId: streamId, reason: "Client disconnect")
         }
@@ -169,6 +194,7 @@ extension WhipServer: WhipServerClientDelegate {
 
     func whipServerClientOnDisconnected(streamId: UUID, reason: String) {
         clients.removeValue(forKey: streamId)
+        clientsChanged()
         delegate.whipServerOnPublishStop(streamId: streamId, reason: reason)
     }
 
@@ -189,6 +215,6 @@ extension WhipServer: WhipServerClientDelegate {
     }
 
     func whipServerClientOnDataReceived(streamId _: UUID, count: Int) {
-        bitrateStats.add(bytesTransferred: count)
+        bitrateStats.mutate { $0.add(bytesTransferred: count) }
     }
 }

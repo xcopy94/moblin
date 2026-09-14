@@ -1,9 +1,9 @@
 // Based on https://github.com/rbaron/catprinter
 // MIT License
 
-import AVFoundation
+@preconcurrency import AVFoundation
 import Collections
-import CoreBluetooth
+@preconcurrency import CoreBluetooth
 import CoreImage
 import Foundation
 
@@ -74,7 +74,7 @@ private let catPrinterServices = [
     CBUUID(string: "0000af30-0000-1000-8000-00805f9b34fb"),
 ]
 
-let catPrinterScanner = BluetoothScanner(serviceIds: catPrinterServices)
+nonisolated(unsafe) let catPrinterScanner = BluetoothScanner(serviceIds: catPrinterServices)
 
 private let printCharacteristicId = CBUUID(string: "AE01")
 private let notifyCharacteristicId = CBUUID(string: "AE02")
@@ -86,7 +86,7 @@ private struct PrintJob {
     let printMode: CatPrinterPrintMode
 }
 
-class CatPrinter: NSObject {
+class CatPrinter: NSObject, @unchecked Sendable {
     private var state: CatPrinterState = .disconnected
     private var centralManager: CBCentralManager?
     private var peripheral: CBPeripheral?
@@ -98,7 +98,7 @@ class CatPrinter: NSObject {
     private var currentJob: CurrentJob?
     private var deviceId: UUID?
     private let ditheringAlgorithm: DitheringAlgorithm = .atkinson
-    weak var delegate: CatPrinterDelegate?
+    weak var delegate: (any CatPrinterDelegate)?
     private var tryWriteNextChunkTimer = SimpleTimer(queue: catPrinterDispatchQueue)
     private var jobCompleteTimer = SimpleTimer(queue: catPrinterDispatchQueue)
     private var feedPaperTimer = SimpleTimer(queue: catPrinterDispatchQueue)
@@ -131,7 +131,7 @@ class CatPrinter: NSObject {
     }
 
     func getState() -> CatPrinterState {
-        return state
+        state
     }
 
     private func startInternal(deviceId: UUID?) {
@@ -145,7 +145,7 @@ class CatPrinter: NSObject {
     }
 
     private func isMxw01() -> Bool {
-        return peripheral?.name == "MXW01"
+        peripheral?.name == "MXW01"
     }
 
     private func printInternal(image: CIImage, feedPaperDelay: Double?) {
@@ -434,28 +434,26 @@ extension CatPrinter: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
         case .poweredOn:
-            centralManager?.scanForPeripherals(withServices: catPrinterServices)
+            connect(central)
         default:
             break
         }
     }
 
-    func centralManager(_ central: CBCentralManager,
-                        didDiscover peripheral: CBPeripheral,
-                        advertisementData _: [String: Any],
-                        rssi _: NSNumber)
-    {
-        guard peripheral.identifier == deviceId else {
+    private func connect(_ central: CBCentralManager) {
+        guard let deviceId,
+              let peripheral = central.retrievePeripherals(withIdentifiers: [deviceId]).first
+        else {
+            logger.info("cat-printer: Device not found")
             return
         }
-        central.stopScan()
         self.peripheral = peripheral
         peripheral.delegate = self
         central.connect(peripheral, options: nil)
         setState(state: .connecting)
     }
 
-    func centralManager(_: CBCentralManager, didFailToConnect _: CBPeripheral, error _: Error?) {}
+    func centralManager(_: CBCentralManager, didFailToConnect _: CBPeripheral, error _: (any Error)?) {}
 
     func centralManager(_: CBCentralManager, didConnect peripheral: CBPeripheral) {
         peripheral.discoverServices(nil)
@@ -464,14 +462,14 @@ extension CatPrinter: CBCentralManagerDelegate {
     func centralManager(
         _: CBCentralManager,
         didDisconnectPeripheral _: CBPeripheral,
-        error _: Error?
+        error _: (any Error)?
     ) {
         reconnect()
     }
 }
 
 extension CatPrinter: CBPeripheralDelegate {
-    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices _: Error?) {
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices _: (any Error)?) {
         if let service = peripheral.services?.first {
             peripheral.discoverCharacteristics(nil, for: service)
         }
@@ -480,7 +478,7 @@ extension CatPrinter: CBPeripheralDelegate {
     func peripheral(
         _: CBPeripheral,
         didDiscoverCharacteristicsFor service: CBService,
-        error _: Error?
+        error _: (any Error)?
     ) {
         for characteristic in service.characteristics ?? [] {
             switch characteristic.uuid {
@@ -501,7 +499,11 @@ extension CatPrinter: CBPeripheralDelegate {
         }
     }
 
-    func peripheral(_: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error _: Error?) {
+    func peripheral(
+        _: CBPeripheral,
+        didUpdateValueFor characteristic: CBCharacteristic,
+        error _: (any Error)?
+    ) {
         if isMxw01() {
             handleMessageMxw01(characteristic: characteristic)
         } else {
@@ -539,12 +541,11 @@ extension CatPrinter: CBPeripheralDelegate {
         switch command {
         case .statusResponse:
             currentJob.setState(state: .waitingForPrintResponse)
-            let bytesPerLine: Int
-            switch currentJob.printMode {
+            let bytesPerLine: Int = switch currentJob.printMode {
             case .blackAndWhite:
-                bytesPerLine = catPrinterWidthPixels / 8
+                catPrinterWidthPixels / 8
             case .grayscale:
-                bytesPerLine = catPrinterWidthPixels / 2
+                catPrinterWidthPixels / 2
             }
             let lineCount = UInt16(currentJob.data.count / bytesPerLine)
             send(command: .printRequest(printMode: currentJob.printMode, count: lineCount),

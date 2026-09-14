@@ -4,16 +4,19 @@ import SwiftUI
 private struct QuickButtonStealthModeView: View {
     @EnvironmentObject var model: Model
     @ObservedObject var stealthMode: StealthMode
+    @State var presentingPicker: Bool = false
     @State var selectedImageItem: PhotosPickerItem?
 
     var body: some View {
         Section {
-            PhotosPicker(selection: $selectedImageItem, matching: .images) {
+            Button {
+                presentingPicker = true
+            } label: {
                 if let image = stealthMode.image {
                     HCenter {
                         Image(uiImage: image)
                             .resizable()
-                            .aspectRatio(contentMode: .fit)
+                            .scaledToFit()
                     }
                 } else {
                     HCenter {
@@ -21,14 +24,15 @@ private struct QuickButtonStealthModeView: View {
                     }
                 }
             }
+            .photosPicker(isPresented: $presentingPicker, selection: $selectedImageItem, matching: .images)
             .onChange(of: selectedImageItem) { imageItem in
                 selectedImageItem = nil
                 imageItem?.loadTransferable(type: Data.self) { result in
                     switch result {
                     case let .success(data?):
-                        model.saveStealthModeImage(data: data)
                         DispatchQueue.main.async {
-                            self.stealthMode.image = UIImage(data: data)
+                            model.saveStealthModeImage(data: data)
+                            stealthMode.image = UIImage(data: data)
                         }
                     default:
                         break
@@ -40,6 +44,7 @@ private struct QuickButtonStealthModeView: View {
                     stealthMode.image = nil
                     model.deleteStealthModeImage()
                 }
+                .tint(.red)
             }
         } footer: {
             Text("Show selected image instead of a black screen.")
@@ -75,7 +80,7 @@ struct QuickButtonsButtonSettingsView: View {
             return
         }
         button.backgroundColor = color
-        model.updateQuickButtonStates()
+        model.updateQuickButtonPairs()
     }
 
     private func moveUp() {
@@ -83,24 +88,24 @@ struct QuickButtonsButtonSettingsView: View {
         let pairs = model.getQuickButtonPairs(page: button.page)
         for (pairIndex, pair) in pairs.enumerated() {
             let otherPair = pairs[(pairIndex + 1) % pairs.count]
-            if pair.first.button.id == button.id {
+            if pair.first.id == button.id {
                 if quickButtonsSettings.twoColumns {
-                    otherButton = otherPair.first.button
+                    otherButton = otherPair.first
                 } else {
-                    otherButton = otherPair.second?.button
+                    otherButton = otherPair.second
                     if otherButton == nil {
-                        otherButton = otherPair.first.button
+                        otherButton = otherPair.first
                     }
                 }
                 break
-            } else if pair.second?.button.id == button.id {
+            } else if pair.second?.id == button.id {
                 if quickButtonsSettings.twoColumns {
-                    otherButton = otherPair.second?.button
+                    otherButton = otherPair.second
                     if otherButton == nil {
-                        otherButton = pairs[0].second?.button
+                        otherButton = pairs[0].second
                     }
                 } else {
-                    otherButton = pair.first.button
+                    otherButton = pair.first
                 }
                 break
             }
@@ -113,24 +118,24 @@ struct QuickButtonsButtonSettingsView: View {
         let pairs = model.getQuickButtonPairs(page: button.page)
         for (pairIndex, pair) in pairs.enumerated() {
             let otherPair = pairs[(pairs.count + pairIndex - 1) % pairs.count]
-            if pair.first.button.id == button.id {
+            if pair.first.id == button.id {
                 if quickButtonsSettings.twoColumns {
-                    otherButton = otherPair.first.button
+                    otherButton = otherPair.first
                 } else {
-                    otherButton = pair.second?.button
+                    otherButton = pair.second
                     if otherButton == nil {
-                        otherButton = otherPair.first.button
+                        otherButton = otherPair.first
                     }
                 }
                 break
-            } else if pair.second?.button.id == button.id {
+            } else if pair.second?.id == button.id {
                 if quickButtonsSettings.twoColumns {
-                    otherButton = otherPair.second?.button
+                    otherButton = otherPair.second
                     if otherButton == nil {
-                        otherButton = pairs[pairs.count - 2].second?.button
+                        otherButton = pairs[pairs.count - 2].second
                     }
                 } else {
-                    otherButton = otherPair.first.button
+                    otherButton = otherPair.first
                 }
                 break
             }
@@ -140,11 +145,11 @@ struct QuickButtonsButtonSettingsView: View {
 
     private func moveLeftRight() {
         guard let pair = model.getQuickButtonPairs(page: button.page).first(where: {
-            $0.first.button.id == button.id || $0.second?.button.id == button.id
+            $0.first.id == button.id || $0.second?.id == button.id
         }) else {
             return
         }
-        swapButtons(firstButton: pair.first.button, secondButton: pair.second?.button)
+        swapButtons(firstButton: pair.first, secondButton: pair.second)
     }
 
     private func swapButtons(firstButton: SettingsQuickButton?, secondButton: SettingsQuickButton?) {
@@ -155,48 +160,46 @@ struct QuickButtonsButtonSettingsView: View {
             return
         }
         database.quickButtons.swapAt(firstIndex, secondIndex)
-        model.updateQuickButtonStates()
+        model.updateQuickButtonPairs()
     }
 
+    @ViewBuilder
     private func positionPortrait() -> some View {
-        Group {
-            PositionButtonView(image: "arrow.up.circle") {
+        PositionButtonView(image: "arrow.up.circle") {
+            moveLeftRight()
+        }
+        .disabled(!quickButtonsSettings.twoColumns)
+        HStack {
+            PositionButtonView(image: "arrow.left.circle") {
+                moveUp()
+            }
+            PositionButtonView(image: "arrow.down.circle") {
                 moveLeftRight()
             }
             .disabled(!quickButtonsSettings.twoColumns)
-            HStack {
-                PositionButtonView(image: "arrow.left.circle") {
-                    moveUp()
-                }
-                PositionButtonView(image: "arrow.down.circle") {
-                    moveLeftRight()
-                }
-                .disabled(!quickButtonsSettings.twoColumns)
-                PositionButtonView(image: "arrow.right.circle") {
-                    moveDown()
-                }
+            PositionButtonView(image: "arrow.right.circle") {
+                moveDown()
             }
         }
     }
 
+    @ViewBuilder
     private func positionLandscape() -> some View {
-        Group {
-            PositionButtonView(image: "arrow.up.circle") {
-                moveUp()
+        PositionButtonView(image: "arrow.up.circle") {
+            moveUp()
+        }
+        HStack {
+            PositionButtonView(image: "arrow.left.circle") {
+                moveLeftRight()
             }
-            HStack {
-                PositionButtonView(image: "arrow.left.circle") {
-                    moveLeftRight()
-                }
-                .disabled(!quickButtonsSettings.twoColumns)
-                PositionButtonView(image: "arrow.down.circle") {
-                    moveDown()
-                }
-                PositionButtonView(image: "arrow.right.circle") {
-                    moveLeftRight()
-                }
-                .disabled(!quickButtonsSettings.twoColumns)
+            .disabled(!quickButtonsSettings.twoColumns)
+            PositionButtonView(image: "arrow.down.circle") {
+                moveDown()
             }
+            PositionButtonView(image: "arrow.right.circle") {
+                moveLeftRight()
+            }
+            .disabled(!quickButtonsSettings.twoColumns)
         }
     }
 
@@ -214,7 +217,7 @@ struct QuickButtonsButtonSettingsView: View {
                     .onChange(of: button.page) { page in
                         model.quickButtons.page = page
                         model.quickButtons.activePage = page
-                        model.updateQuickButtonStates()
+                        model.updateQuickButtonPairs()
                     }
                 }
                 HStack {
@@ -255,10 +258,9 @@ struct QuickButtonsButtonSettingsView: View {
                 Section {
                     Toggle("Enabled", isOn: $button.enabled)
                         .onChange(of: button.enabled) { _ in
-                            model.updateQuickButtonStates()
+                            model.updateQuickButtonPairs()
                         }
-                        .disabled(model.getQuickButtonState(type: button.type)?.isOn == true && button
-                            .enabled)
+                        .disabled(button.isOn && button.enabled)
                 }
                 ShortcutSectionView {
                     NavigationLink {

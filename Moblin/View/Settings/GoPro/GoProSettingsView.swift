@@ -1,8 +1,7 @@
-import NetworkExtension
 import SwiftUI
 
 func qrCodeHeight(_ metrics: GeometryProxy) -> Double {
-    return metrics.size.width * 0.5
+    metrics.size.width * 0.5
 }
 
 private struct GoProLaunchLiveStreamSettingsView: View {
@@ -59,11 +58,7 @@ private struct GoProLaunchLiveStreamSettingsEntryView: View {
         NavigationLink {
             GoProLaunchLiveStreamSettingsView(goPro: goPro, launchLiveStream: launchLiveStream)
         } label: {
-            HStack {
-                DraggableItemPrefixView()
-                Text(launchLiveStream.name)
-                Spacer()
-            }
+            DraggableItemTextView(name: launchLiveStream.name)
         }
     }
 }
@@ -88,14 +83,10 @@ private struct GoProWifiCredentialsSettingsView: View {
                 }
                 Section {
                     NavigationLink {
-                        TextEditView(
-                            title: String(localized: "SSID"),
-                            value: wifiCredentials.ssid,
-                            onSubmit: {
-                                wifiCredentials.ssid = $0
-                                generate()
-                            }
-                        )
+                        WiFiSsidEditView(value: wifiCredentials.ssid) {
+                            wifiCredentials.ssid = $0
+                            generate()
+                        }
                     } label: {
                         TextItemLocalizedView(name: "SSID", value: wifiCredentials.ssid)
                     }
@@ -126,14 +117,6 @@ private struct GoProWifiCredentialsSettingsView: View {
                 generate()
             }
             .navigationTitle("WiFi credentials")
-            .onAppear {
-                NEHotspotNetwork.fetchCurrent(completionHandler: { network in
-                    if wifiCredentials.ssid.isEmpty, let network {
-                        wifiCredentials.ssid = network.ssid
-                        generate()
-                    }
-                })
-            }
         }
     }
 }
@@ -146,17 +129,9 @@ private struct GoProWifiCredentialsSettingsEntryView: View {
         NavigationLink {
             GoProWifiCredentialsSettingsView(goPro: goPro, wifiCredentials: wifiCredentials)
         } label: {
-            HStack {
-                DraggableItemPrefixView()
-                Text(wifiCredentials.name)
-                Spacer()
-            }
+            DraggableItemTextView(name: wifiCredentials.name)
         }
     }
-}
-
-private func rtmpStreamUrl(address: String, port: UInt16, streamKey: String) -> String {
-    return "rtmp://\(address):\(port)\(rtmpServerApp)/\(streamKey)"
 }
 
 private struct GoProRtmpUrlSettingsView: View {
@@ -181,19 +156,19 @@ private struct GoProRtmpUrlSettingsView: View {
         }
         var serverUrls: [String] = []
         for status in status.ipStatuses.filter({ $0.ipType == .ipv4 }) {
-            serverUrls.append(rtmpStreamUrl(
+            serverUrls.append(rtmpServerStreamUrl(
                 address: status.ipType.formatAddress(status.ip),
                 port: model.database.rtmpServer.port,
                 streamKey: stream.streamKey
             ))
         }
-        serverUrls.append(rtmpStreamUrl(
+        serverUrls.append(rtmpServerStreamUrl(
             address: personalHotspotLocalAddress,
             port: model.database.rtmpServer.port,
             streamKey: stream.streamKey
         ))
         for status in status.ipStatuses.filter({ $0.ipType == .ipv6 }) {
-            serverUrls.append(rtmpStreamUrl(
+            serverUrls.append(rtmpServerStreamUrl(
                 address: status.ipType.formatAddress(status.ip),
                 port: model.database.rtmpServer.port,
                 streamKey: stream.streamKey
@@ -301,11 +276,7 @@ private struct GoProRtmpUrlSettingsEntryView: View {
         NavigationLink {
             GoProRtmpUrlSettingsView(goPro: goPro, status: status, rtmpUrl: rtmpUrl)
         } label: {
-            HStack {
-                DraggableItemPrefixView()
-                Text(rtmpUrl.name)
-                Spacer()
-            }
+            DraggableItemTextView(name: rtmpUrl.name)
         }
     }
 }
@@ -451,6 +422,19 @@ private struct GoProRtmpUrls: View {
     }
 }
 
+private struct GoProQrCodesSettingsView: View {
+    @EnvironmentObject var model: Model
+
+    var body: some View {
+        Form {
+            GoProLaunchLiveStream(goPro: model.database.goPro, goProState: model.goPro)
+            GoProWifiCredentials(goPro: model.database.goPro, goProState: model.goPro)
+            GoProRtmpUrls(status: model.statusOther, goPro: model.database.goPro, goProState: model.goPro)
+        }
+        .navigationTitle("QR codes")
+    }
+}
+
 struct GoProSettingsView: View {
     @EnvironmentObject var model: Model
 
@@ -461,9 +445,14 @@ struct GoProSettingsView: View {
                     IntegrationImageView(imageName: "GoPro")
                 }
             }
-            GoProLaunchLiveStream(goPro: model.database.goPro, goProState: model.goPro)
-            GoProWifiCredentials(goPro: model.database.goPro, goProState: model.goPro)
-            GoProRtmpUrls(status: model.statusOther, goPro: model.database.goPro, goProState: model.goPro)
+            GoProBleDevicesSettingsSection(goPro: model.database.goPro)
+            Section {
+                NavigationLink {
+                    GoProQrCodesSettingsView()
+                } label: {
+                    Text("QR codes")
+                }
+            }
         }
         .navigationTitle("GoPro")
     }

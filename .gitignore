@@ -95,3 +95,19 @@ Config.xcconfig
 .DS_Store
 __MACOSX
 Config/User.xcconfig
+
+# Node.js
+node_modules/
+logs
+tests/files/
+__pycache__
+
+tests/suites/websites/*.jpg
+tests/suites/websites/*.mp4
+tests/config.toml
+FfmpegTestStream.wav
+tests/ltc.wav
+*~
+tests/*.moblinSettings
+tests/cache/
+Moblin Localizations/

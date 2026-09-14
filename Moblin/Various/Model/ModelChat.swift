@@ -7,16 +7,17 @@ let maximumNumberOfChatMessages = 50
 let maximumNumberOfInteractiveChatMessages = 100
 
 extension Model {
-    func pauseChat() {
+    func pauseChat(chat: ChatProvider) {
         chat.pause(redLine: createRedLineChatPost())
     }
 
-    func endOfChatReachedWhenPaused() {
+    func endOfChatReachedWhenPaused(chat: ChatProvider) {
         chat.endReachedWhenPaused()
     }
 
     func disableInteractiveChat() {
         chat.endReachedWhenPaused()
+        chatActivityFeed.endReachedWhenPaused()
     }
 
     func pauseQuickButtonChat() {
@@ -55,10 +56,14 @@ extension Model {
     }
 
     func removeOldChatMessages(now: ContinuousClock.Instant) {
-        if chat.paused {
+        guard database.chat.maximumAgeEnabled else {
             return
         }
-        guard database.chat.maximumAgeEnabled else {
+        removeOldChatMessages(now: now, chat: chat)
+    }
+
+    private func removeOldChatMessages(now: ContinuousClock.Instant, chat: ChatProvider) {
+        if chat.paused {
             return
         }
         while let post = chat.posts.last {
@@ -72,6 +77,7 @@ extension Model {
 
     func updateChat() {
         chat.update()
+        chatActivityFeed.update()
         quickButtonChat.update()
         if externalDisplay.chatEnabled {
             externalDisplayChat.update()
@@ -95,11 +101,11 @@ extension Model {
     func isAlertMessage(post: ChatPost) -> Bool {
         switch post.highlight?.kind {
         case .redemption:
-            return true
+            true
         case .newFollower:
-            return true
+            true
         default:
-            return false
+            false
         }
     }
 
@@ -114,6 +120,7 @@ extension Model {
     func updateChatMoreThanOneChatConfigured() {
         let moreThanOneStreamingPlatform = isMoreThanOneChatConfigured()
         chat.moreThanOneStreamingPlatform = moreThanOneStreamingPlatform
+        chatActivityFeed.moreThanOneStreamingPlatform = moreThanOneStreamingPlatform
         quickButtonChat.moreThanOneStreamingPlatform = moreThanOneStreamingPlatform
         externalDisplayChat.moreThanOneStreamingPlatform = moreThanOneStreamingPlatform
         chatWidgetChat.moreThanOneStreamingPlatform = moreThanOneStreamingPlatform
@@ -166,7 +173,7 @@ extension Model {
     }
 
     func isChatConfigured() -> Bool {
-        return isTwitchChatConfigured() || isKickPusherConfigured() ||
+        isTwitchChatConfigured() || isKickPusherConfigured() ||
             isYouTubeLiveChatConfigured() || isSoopChatConfigured() ||
             isOpenStreamingPlatformChatConfigured()
     }
@@ -182,26 +189,26 @@ extension Model {
     }
 
     func isChatConnected() -> Bool {
-        if isTwitchChatConfigured() && !isTwitchChatConnected() {
+        if isTwitchChatConfigured(), !isTwitchChatConnected() {
             return false
         }
-        if isKickPusherConfigured() && !isKickPusherConnected() {
+        if isKickPusherConfigured(), !isKickPusherConnected() {
             return false
         }
-        if isYouTubeLiveChatConfigured() && !isYouTubeLiveChatConnected() {
+        if isYouTubeLiveChatConfigured(), !isYouTubeLiveChatConnected() {
             return false
         }
-        if isSoopChatConfigured() && !isSoopChatConnected() {
+        if isSoopChatConfigured(), !isSoopChatConnected() {
             return false
         }
-        if isOpenStreamingPlatformChatConfigured() && !isOpenStreamingPlatformChatConnected() {
+        if isOpenStreamingPlatformChatConfigured(), !isOpenStreamingPlatformChatConnected() {
             return false
         }
         return true
     }
 
     func hasChatEmotes() -> Bool {
-        return hasTwitchChatEmotes()
+        hasTwitchChatEmotes()
             || hasKickPusherEmotes()
             || hasYouTubeLiveChatEmotes()
             || hasSoopChatEmotes()
@@ -237,17 +244,17 @@ extension Model {
             if stream.kickLoggedIn {
                 sendKickChatMessage(message: message)
             } else {
-                makeNotLoggedInToKickToast()
+                makeNotLoggedInToToast(platform: .kick)
             }
         }
     }
 
     private func evaluateFilters(user: String?, segments: [ChatPostSegment]) -> SettingsChatFilter? {
-        return database.chat.filters.first(where: { $0.isMatching(user: user, segments: segments) })
+        database.chat.filters.first(where: { $0.isMatching(user: user, segments: segments) })
     }
 
     func appendChatMessage(
-        platform: Platform,
+        platform: Platform?,
         messageId: String?,
         displayName: String?,
         user: String?,
@@ -267,7 +274,7 @@ extension Model {
         sourceChannelIcon: URL? = nil
     ) {
         let filter = evaluateFilters(user: user, segments: segments)
-        if database.chat.botEnabled, live, filter?.chatBot != false,
+        if let platform, database.chat.botEnabled, live, filter?.chatBot != false,
            segments.first?.text?.trim().starts(with: "!") == true
         {
             if chatBotMessages.count < 25 || isModerator {
@@ -291,7 +298,7 @@ extension Model {
             displayName: displayName,
             user: user,
             userId: userId,
-            userColor: userColor?.makeReadableOnDarkBackground() ?? database.chat.usernameColor,
+            userColor: makeUserColor(userColor: userColor),
             userBadges: userBadges,
             segments: segments,
             timestamp: timestamp,
@@ -299,7 +306,7 @@ extension Model {
             isAction: isAction,
             isSubscriber: isSubscriber,
             bits: bits,
-            highlight: highlight,
+            highlight: highlight ?? (isModerator ? ChatHighlight.makeModerator() : nil),
             live: live,
             filter: filter,
             platform: platform,
@@ -323,6 +330,10 @@ extension Model {
             printChatMessage(post: post)
         }
         if filter?.showOnScreen != false {
+            let isAlert = highlight?.isAlert() == true
+            if isAlert {
+                chatActivityFeed.appendMessage(post: post)
+            }
             chat.appendMessage(post: post)
             quickButtonChat.appendMessage(post: post)
             for browserEffect in browserEffects.values {
@@ -334,7 +345,7 @@ extension Model {
             if externalDisplay.chatEnabled {
                 externalDisplayChat.appendMessage(post: post)
             }
-            if highlight != nil {
+            if isAlert {
                 if quickButtonChatState.chatAlertsPaused {
                     if pausedQuickButtonChatAlertsPosts.count < 2 * maximumNumberOfInteractiveChatMessages {
                         pausedQuickButtonChatAlertsPosts.append(post)
@@ -343,14 +354,25 @@ extension Model {
                     newQuickButtonChatAlertsPosts.append(post)
                 }
             }
+            if !enabledChatEffects.isEmpty {
+                chatWidgetChat.appendMessage(post: post)
+            }
+            for effect in enabledChatEmoteComboEffects {
+                effect.appendMessage(post: post)
+            }
         }
-        if !enabledChatEffects.isEmpty {
-            chatWidgetChat.appendMessage(post: post)
+    }
+
+    private func makeUserColor(userColor: RgbColor?) -> RgbColor {
+        if database.chat.sameUsernameColor {
+            return database.chat.usernameColor
         }
+        return userColor?.makeReadableOnDarkBackground() ?? database.chat.usernameColor
     }
 
     func reloadChatMessages() {
         chat.posts = newPostIds(posts: chat.posts)
+        chatActivityFeed.posts = newPostIds(posts: chatActivityFeed.posts)
         quickButtonChat.posts = newPostIds(posts: quickButtonChat.posts)
         externalDisplayChat.posts = newPostIds(posts: externalDisplayChat.posts)
         chatWidgetChat.posts = newPostIds(posts: chatWidgetChat.posts)
@@ -369,7 +391,7 @@ extension Model {
     }
 
     func isShowingStatusChat() -> Bool {
-        return database.show.chat && isChatConfigured()
+        database.show.chat && isChatConfigured()
     }
 
     func updateStatusChatText() {
@@ -401,7 +423,7 @@ extension Model {
                 statuses.append(ChatPlatformStatus(platform: .openStreamingPlatform,
                                                    connected: isOpenStreamingPlatformChatConnected()))
             }
-            if statuses.allSatisfy({ $0.connected }) {
+            if statuses.allSatisfy(\.connected) {
                 status = String(localized: "Connected")
             } else {
                 status = String(localized: "Disconnected")
@@ -413,6 +435,11 @@ extension Model {
         if statuses != statusTopLeft.chatPlatformStatuses {
             statusTopLeft.chatPlatformStatuses = statuses
         }
+    }
+
+    func showChatLabelsForAWhile() {
+        chat.showLabelForAWhile()
+        chatActivityFeed.showLabelForAWhile()
     }
 
     func printChatMessage(post: ChatPost) {
@@ -437,15 +464,15 @@ extension Model {
                         if let text = segment.text {
                             Text(text)
                         }
-                        if let url = segment.url {
+                        if let url = (segment.url ?? segment.bigGifUrl)?.url(animated: false) {
                             CacheAsyncImage(url: url) { image in
                                 image
                                     .resizable()
-                                    .aspectRatio(contentMode: .fit)
+                                    .scaledToFit()
                             } placeholder: {
                                 Image("AppIconNoBackground")
                                     .resizable()
-                                    .aspectRatio(contentMode: .fit)
+                                    .scaledToFit()
                             }
                             .frame(height: 45)
                             Text(" ")
@@ -526,6 +553,7 @@ extension Model {
 
     func deleteChatMessage(messageId: String) {
         chat.deleteMessage(messageId: messageId)
+        chatActivityFeed.deleteMessage(messageId: messageId)
         quickButtonChat.deleteMessage(messageId: messageId)
         externalDisplayChat.deleteMessage(messageId: messageId)
         chatWidgetChat.deleteMessage(messageId: messageId)
@@ -534,6 +562,7 @@ extension Model {
 
     func deleteChatUser(userId: String) {
         chat.deleteUser(userId: userId)
+        chatActivityFeed.deleteUser(userId: userId)
         quickButtonChat.deleteUser(userId: userId)
         externalDisplayChat.deleteUser(userId: userId)
         chatWidgetChat.deleteUser(userId: userId)

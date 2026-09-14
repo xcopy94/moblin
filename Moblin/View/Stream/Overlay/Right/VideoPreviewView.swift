@@ -4,11 +4,13 @@ import SwiftUI
 struct VideoPreviewItemView: UIViewRepresentable {
     let previewView: PreviewView
 
-    func makeUIView(context _: Context) -> PreviewView {
-        return previewView
+    func makeUIView(context _: Context) -> SharedUiViewContainerView {
+        SharedUiViewContainerView(sharedView: previewView)
     }
 
-    func updateUIView(_: PreviewView, context _: Context) {}
+    func updateUIView(_ uiView: SharedUiViewContainerView, context _: Context) {
+        uiView.attachSharedView()
+    }
 }
 
 private struct VideoPreviewItem: View {
@@ -19,9 +21,9 @@ private struct VideoPreviewItem: View {
 
     private func height() -> Double {
         if orientation.isPortrait {
-            return 118
+            118
         } else {
-            return 68
+            68
         }
     }
 
@@ -53,9 +55,9 @@ struct StreamOverlayRightVideoPreviewView: View {
 
     private func height() -> Double {
         if orientation.isPortrait {
-            return 140
+            140
         } else {
-            return 90
+            90
         }
     }
 

@@ -19,7 +19,12 @@ private struct ChatSettingsGeneralView: View {
         NavigationLink {
             ChatBotSettingsView()
         } label: {
-            Toggle(isOn: $chat.botEnabled) {
+            Toggle(isOn: Binding(get: {
+                chat.botEnabled
+            }, set: { value in
+                chat.botEnabled = value
+                model.chatBotCustomCommandsTextChanged()
+            })) {
                 Text("Bot")
             }
         }
@@ -76,6 +81,7 @@ struct ChatSettingsView: View {
                     }
             }
             Section {
+                Toggle("Activity feed", isOn: $chat.activityFeed)
                 ChatSettingsAppearanceView(model: model, database: database, chat: chat)
                 ChatSettingsLayoutView(model: model, database: database, chat: chat)
                 ChatSettingsGeneralView(model: model, database: database, chat: chat)

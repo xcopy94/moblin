@@ -1,15 +1,33 @@
 import SwiftUI
 
 private struct StoreSettingsRestoreView: View {
-    @EnvironmentObject var model: Model
+    let model: Model
+    @State var isRestoring = false
+    @State var showErrorAlert = false
 
     var body: some View {
         Section {
-            TextButtonView("Restore purchases") {
-                Task {
-                    await model.updateProductFromAppStore()
+            ZStack {
+                TextButtonView("Restore purchases") {
+                    isRestoring = true
+                    Task {
+                        do {
+                            try await model.restorePurchases()
+                        } catch {
+                            showErrorAlert = true
+                        }
+                        isRestoring = false
+                    }
+                }
+                .disabled(isRestoring)
+                .opacity(isRestoring ? 0.0 : 1.0)
+                if isRestoring {
+                    ProgressView()
                 }
             }
+        }
+        .alert("Restore purchases failed", isPresented: $showErrorAlert) {
+            Button("Ok") {}
         }
     }
 }
@@ -40,7 +58,7 @@ private struct StoreSettingsIconsToBuyView: View {
                         Image(icon.imageNoBackground())
                             .interpolation(.high)
                             .resizable()
-                            .aspectRatio(contentMode: .fit)
+                            .scaledToFit()
                             .frame(width: controlBarButtonSize, height: controlBarButtonSize)
                         Spacer()
                         Text(icon.name)
@@ -103,7 +121,7 @@ private struct StoreSettingsMyIconsView: View {
                         Image(icon.imageNoBackground())
                             .interpolation(.high)
                             .resizable()
-                            .aspectRatio(contentMode: .fit)
+                            .scaledToFit()
                             .frame(width: controlBarButtonSize, height: controlBarButtonSize)
                         Spacer()
                         Text(icon.name)
@@ -113,6 +131,7 @@ private struct StoreSettingsMyIconsView: View {
             }
             .onChange(of: store.iconImage) { iconImage in
                 model.database.iconImage = iconImage
+                model.updateFaceFilterSettings()
                 setAppIcon(iconImage: iconImage)
             }
             .pickerStyle(.inline)
@@ -126,6 +145,7 @@ private struct StoreSettingsMyIconsView: View {
 }
 
 struct StoreSettingsView: View {
+    let model: Model
     @ObservedObject var store: Store
     @State var disabledPurchaseButtons: Set<String> = []
 
@@ -140,7 +160,7 @@ struct StoreSettingsView: View {
                 StoreSettingsBoughtEverythingView()
             }
             StoreSettingsMyIconsView(store: store)
-            StoreSettingsRestoreView()
+            StoreSettingsRestoreView(model: model)
         }
         .navigationTitle("Store")
     }

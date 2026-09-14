@@ -19,12 +19,12 @@ func fetchBttvEmotes(platform: EmotesPlatform,
     var message: String?
     var emotes: [String: Emote] = [:]
     do {
-        emotes = try emotes.merging(await fetchGlobalEmotes()) { $1 }
+        emotes = try await emotes.merging(fetchGlobalEmotes()) { $1 }
     } catch {
         message = String(localized: "Failed to get BTTV emotes")
     }
     do {
-        emotes = try emotes.merging(await fetchChannelEmotes(
+        emotes = try await emotes.merging(fetchChannelEmotes(
             platform: platform,
             channelId: channelId
         )) { $1 }
@@ -35,7 +35,7 @@ func fetchBttvEmotes(platform: EmotesPlatform,
 }
 
 private func makeUrl(emote: BttvEmote) -> URL? {
-    guard let url = URL(string: "https://cdn.betterttv.net/emote/\(emote.id)/3x") else {
+    guard let url = URL(string: "https://cdn.betterttv.net/emote/\(emote.id)/1x") else {
         logger.info("emotes: Failed to create URL for BTTV emote \(emote.code)")
         return nil
     }

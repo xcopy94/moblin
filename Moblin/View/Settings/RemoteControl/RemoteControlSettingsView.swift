@@ -29,7 +29,7 @@ private struct PasswordView: View {
                         }
                         .submitLabel(.done)
                         .onDisappear {
-                            if changed && !submitted {
+                            if changed, !submitted {
                                 submit()
                             }
                         }
@@ -41,9 +41,49 @@ private struct PasswordView: View {
     }
 }
 
-private struct RemoteControlSettingsStreamerView: View {
+private struct AssistantUrlSettingsView: View {
     let model: Model
     @ObservedObject var streamer: SettingsRemoteControlStreamer
+    @ObservedObject var url: SettingsRemoteControlStreamerUrl
+
+    var body: some View {
+        Button {
+            streamer.name = url.name
+            streamer.url = url.url
+            model.reloadRemoteControlStreamer()
+            model.reloadConnections()
+        } label: {
+            HStack {
+                Text(url.name)
+                    .foregroundColor(.primary)
+                Spacer()
+                Text(url.url)
+                    .foregroundColor(.primary)
+                if streamer.url == url.url {
+                    Image(systemName: "checkmark")
+                        .foregroundColor(.blue)
+                }
+            }
+        }
+        .contextMenu {
+            if isMac() {
+                ContextMenuDeleteButtonView {
+                    streamer.savedUrls.removeAll(where: { $0 === url })
+                }
+            }
+        }
+    }
+}
+
+private struct UrlSettingsInnerView: View {
+    let model: Model
+    @ObservedObject var database: Database
+    @ObservedObject var streamer: SettingsRemoteControlStreamer
+
+    private func submitStreamerName(name: String) {
+        streamer.name = name
+        streamer.savedUrls.first(where: { $0.url == streamer.url })?.name = name
+    }
 
     private func submitStreamerUrl(value: String) {
         guard isValidWebSocketUrl(url: value) == nil else {
@@ -52,7 +92,55 @@ private struct RemoteControlSettingsStreamerView: View {
         streamer.url = value
         model.reloadRemoteControlStreamer()
         model.reloadConnections()
+        guard !streamer.savedUrls.contains(where: { $0.url == value }) else {
+            return
+        }
+        let url = SettingsRemoteControlStreamerUrl()
+        url.name = streamer.name
+        url.url = value
+        streamer.savedUrls.append(url)
     }
+
+    var body: some View {
+        Form {
+            Section {
+                NameEditView(name: $streamer.name)
+                    .onChange(of: streamer.name) { name in
+                        submitStreamerName(name: name)
+                    }
+                TextEditNavigationView(
+                    title: String(localized: "URL"),
+                    value: streamer.url,
+                    onChange: isValidWebSocketUrl,
+                    onSubmit: submitStreamerUrl,
+                    footers: [
+                        String(
+                            localized: "Enter assistant's address and port. For example ws://132.23.43.43:2345."
+                        ),
+                    ],
+                    placeholder: "ws://32.143.32.12:\(DefaultTcpPorts.remoteControlAssistant)"
+                )
+            }
+            Section {
+                ForEach(streamer.savedUrls) { url in
+                    AssistantUrlSettingsView(model: model, streamer: streamer, url: url)
+                }
+                .onDelete { offsets in
+                    streamer.savedUrls.remove(atOffsets: offsets)
+                }
+            } header: {
+                Text("Saved URLs")
+            } footer: {
+                SwipeLeftToDeleteHelpView(kind: String(localized: "a URL"))
+            }
+        }
+        .navigationTitle("Assistant")
+    }
+}
+
+private struct RemoteControlSettingsStreamerView: View {
+    let model: Model
+    @ObservedObject var streamer: SettingsRemoteControlStreamer
 
     private func submitStreamerPreviewFps(value: Float) {
         streamer.previewFps = value
@@ -60,7 +148,7 @@ private struct RemoteControlSettingsStreamerView: View {
     }
 
     private func formatStreamerPreviewFps(value: Float) -> String {
-        return String(Int(value))
+        String(Int(value))
     }
 
     var body: some View {
@@ -70,18 +158,14 @@ private struct RemoteControlSettingsStreamerView: View {
                     model.reloadRemoteControlStreamer()
                     model.reloadConnections()
                 }
-            TextEditNavigationView(
-                title: String(localized: "Assistant URL"),
-                value: streamer.url,
-                onChange: isValidWebSocketUrl,
-                onSubmit: submitStreamerUrl,
-                footers: [
-                    String(
-                        localized: "Enter assistant's address and port. For example ws://132.23.43.43:2345."
-                    ),
-                ],
-                placeholder: "ws://32.143.32.12:2345"
-            )
+            NavigationLink {
+                UrlSettingsInnerView(model: model,
+                                     database: model.database,
+                                     streamer: streamer)
+            } label: {
+                TextItemLocalizedView(name: "Assistant",
+                                      value: streamer.name.isEmpty ? streamer.url : streamer.name)
+            }
         } footer: {
             Text("""
             Enable to allow an assistant to monitor and control this device from a \
@@ -120,13 +204,13 @@ private struct RemoteControlSettingsStreamerView: View {
     }
 }
 
-private struct UrlsView: View {
+private struct RemoteControlUrlsView: View {
     @ObservedObject var relay: SettingsRemoteControlServerRelay
     @Binding var port: UInt16
     let status: StatusOther
 
     private func formatUrl(ip: String) -> String {
-        return "ws://\(ip):\(port)"
+        "ws://\(ip):\(port)"
     }
 
     var body: some View {
@@ -219,7 +303,7 @@ private struct StreamerView: View {
                         onChange: isValidPort,
                         onSubmit: submitAssistantPort,
                         keyboardType: .numbersAndPunctuation,
-                        placeholder: "2345"
+                        placeholder: String(DefaultTcpPorts.remoteControlAssistant)
                     )
                 } header: {
                     Text("Assistant")
@@ -248,18 +332,14 @@ private struct StreamerView: View {
                     Text("Use a relay server when the assistant is behind CGNAT or similar.")
                 }
                 if streamer.enabled {
-                    UrlsView(relay: streamer.relay,
-                             port: $streamer.port,
-                             status: model.statusOther)
+                    RemoteControlUrlsView(relay: streamer.relay,
+                                          port: $streamer.port,
+                                          status: model.statusOther)
                 }
             }
             .navigationTitle("Streamer")
         } label: {
-            HStack {
-                DraggableItemPrefixView()
-                Text(streamer.name)
-                Spacer()
-            }
+            DraggableItemTextView(name: streamer.name)
         }
     }
 }
@@ -347,7 +427,7 @@ struct RemoteControlStreamersView: View {
                 streamer.name = makeUniqueName(name: SettingsRemoteControlAssistant.baseName,
                                                existingNames: remoteControlSettings.streamers)
                 streamer.enabled = true
-                streamer.port = 2345
+                streamer.port = DefaultTcpPorts.remoteControlAssistant
                 remoteControlSettings.streamers.append(streamer)
             }
         } footer: {
@@ -358,9 +438,9 @@ struct RemoteControlStreamersView: View {
 
 private func formatUrl(ip: String, port: UInt16) -> String {
     if port == 80 {
-        return "http://\(ip)"
+        "http://\(ip)"
     } else {
-        return "http://\(ip):\(port)"
+        "http://\(ip):\(port)"
     }
 }
 
@@ -369,7 +449,7 @@ private struct WebUrlsView: View {
     @ObservedObject var status: StatusOther
 
     private func format(ip: String) -> String {
-        return formatUrl(ip: ip, port: web.port)
+        formatUrl(ip: ip, port: web.port)
     }
 
     var body: some View {
@@ -404,7 +484,7 @@ struct RemoteControlWebDefaultUrlView: View {
     let path: String
 
     private func format(ip: String) -> String {
-        return formatUrl(ip: ip, port: web.port)
+        formatUrl(ip: ip, port: web.port)
     }
 
     var body: some View {

@@ -5,6 +5,7 @@ private let authorizeUrl = "https://id.twitch.tv/oauth2/authorize"
 let twitchMoblinAppClientId = "qv6bnocuwapqigeqjoamfhif0cv2xn"
 private let scopes = [
     "user:read:chat",
+    "user:read:follows",
     "user:write:chat",
     "moderator:read:followers",
     "moderator:read:blocked_terms",
@@ -22,6 +23,8 @@ private let scopes = [
     "channel:read:stream_key",
     "channel:read:hype_train",
     "channel:read:ads",
+    "channel:manage:polls",
+    "channel:manage:predictions",
     "channel:manage:broadcast",
     "channel:manage:moderators",
     "channel:manage:vips",
@@ -31,12 +34,13 @@ private let scopes = [
 ]
 private let redirectHost = "localhost"
 private let redirectUri = "https://\(redirectHost)"
+private let twitchAuthServer = "www.twitch.tv"
 
 private struct TwitchAuthView: UIViewRepresentable {
     let twitchAuth: TwitchAuth
 
     func makeUIView(context _: Context) -> WKWebView {
-        return twitchAuth.getWebBrowser()
+        twitchAuth.getWebBrowser()
     }
 
     func updateUIView(_: WKWebView, context _: Context) {}
@@ -59,6 +63,7 @@ struct TwitchLoginView: View {
     }
 }
 
+@MainActor
 class TwitchAuth: NSObject {
     private var webBrowser: WKWebView?
     private var onAccessToken: ((String) -> Void)?
@@ -121,13 +126,20 @@ func storeTwitchAccessTokenInKeychain(streamId: UUID, accessToken: String) {
 }
 
 func loadTwitchAccessTokenFromKeychain(streamId: UUID) -> String? {
-    return createKeychain(streamId: streamId.uuidString).load()
+    createKeychain(streamId: streamId.uuidString).load()
 }
 
 func removeTwitchAccessTokenInKeychain(streamId: UUID) {
     createKeychain(streamId: streamId.uuidString).remove()
 }
 
+func removeUnusedTwitchAccessTokensInKeychain(usedStreamIds: [UUID]) {
+    let usedStreamIds = Set(usedStreamIds.map(\.uuidString))
+    for streamId in Keychain.loadStreamIds(server: twitchAuthServer) where !usedStreamIds.contains(streamId) {
+        createKeychain(streamId: streamId).remove()
+    }
+}
+
 private func createKeychain(streamId: String) -> Keychain {
-    return Keychain(streamId: streamId, server: "www.twitch.tv", logPrefix: "twitch: auth")
+    Keychain(streamId: streamId, server: twitchAuthServer, logPrefix: "twitch: auth")
 }

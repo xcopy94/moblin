@@ -1,17 +1,18 @@
 import AVFoundation
 import Network
 import SwiftUI
+import VideoToolbox
 
 private func isMuted(level: Float) -> Bool {
-    return level.isNaN
+    level.isNaN
 }
 
 private func becameMuted(old: Float, new: Float) -> Bool {
-    return !isMuted(level: old) && isMuted(level: new)
+    !isMuted(level: old) && isMuted(level: new)
 }
 
 private func becameUnmuted(old: Float, new: Float) -> Bool {
-    return isMuted(level: old) && !isMuted(level: new)
+    isMuted(level: old) && !isMuted(level: new)
 }
 
 protocol MediaDelegate: AnyObject {
@@ -25,9 +26,11 @@ protocol MediaDelegate: AnyObject {
     func mediaOnRistDisconnected()
     func mediaOnWhipConnected()
     func mediaOnWhipDisconnected(_ reason: String)
+    func mediaOnMobcamConnected()
+    func mediaOnMobcamDisconnected(_ reason: String)
     func mediaOnWhipPerform(request: URLRequest,
                             queue: DispatchQueue,
-                            completion: ((Data?, URLResponse?, (any Error)?) -> Void)?)
+                            completion: (@MainActor (Data?, URLResponse?, (any Error)?) -> Void)?)
     func mediaOnAudioMuteChange()
     func mediaOnAudioBuffer(_ sampleBuffer: CMSampleBuffer)
     func mediaOnLowFpsImage(_ lowFpsImage: Data?, _ frameNumber: UInt64)
@@ -41,14 +44,15 @@ protocol MediaDelegate: AnyObject {
     func mediaOnRecorderFinished()
     func mediaOnNoTorch()
     func mediaOnFps(fps: Int)
-    func mediaStrlaRelayDestinationAddress(address: String, port: UInt16)
+    func mediaMoblinkStreamerDestinationAddress(address: String, port: UInt16)
+    func mediaMoblinkStreamerRestartTunnel(relayId: UUID)
     func mediaSetZoomX(x: Float)
     func mediaSetExposureBias(bias: Float)
     func mediaSelectedFps(auto: Bool)
-    func mediaError(error: Error)
+    func mediaError(error: any Error)
 }
 
-final class Media: NSObject {
+final class Media: NSObject, @unchecked Sendable {
     private var rtmpStreams: [RtmpStream] = []
     private var rtmpStream: RtmpStream? {
         rtmpStreams.first
@@ -58,8 +62,10 @@ final class Media: NSObject {
     private var srtStreamOld: SrtStreamOfficial?
     private var ristStream: RistStream?
     private var whipStream: WhipStream?
+    private var mobcamStream: MobcamStream?
+    private var previewStreamHandler: PreviewStreamHandler?
     private var srtlaClient: SrtlaClient?
-    private var processor: Processor?
+    private(set) var processor: Processor?
     private var srtTotalByteCount: Int64 = 0
     private var srtPreviousTotalByteCount: Int64 = 0
     private var srtTransportAvgBitrate: Int64 = 0
@@ -72,7 +78,7 @@ final class Media: NSObject {
     private var experimental: Bool = false
     private var overheadBandwidth: Int32 = 25
     private var maximumBandwidthFollowInput: Bool = false
-    private let delegate: MediaDelegate
+    let delegate: any MediaDelegate
     private var adaptiveBitrate: AdaptiveBitrate?
     var srtDroppedPacketsTotal: Int32 = 0
     private var videoEncoderSettings = VideoEncoderSettings()
@@ -87,7 +93,7 @@ final class Media: NSObject {
     private var canvasSize: CGSize = .init(width: 1920, height: 1080)
     private var limitAdaptiveBitrateByTransportBitrate: Bool = true
 
-    init(delegate: MediaDelegate) {
+    init(delegate: any MediaDelegate) {
         self.delegate = delegate
     }
 
@@ -96,11 +102,11 @@ final class Media: NSObject {
     }
 
     func srtlaConnectionStatistics() -> [BondingConnection]? {
-        return srtlaClient?.connectionStatistics()
+        srtlaClient?.connectionStatistics()
     }
 
     func ristBondingStatistics() -> [BondingConnection]? {
-        return ristStream?.connectionStatistics()
+        ristStream?.connectionStatistics()
     }
 
     func setConnectionPriorities(connectionPriorities: SettingsStreamSrtConnectionPriorities) {
@@ -116,11 +122,14 @@ final class Media: NSObject {
         rtmpStopStream()
         ristStopStream()
         whipStopStream()
+        mobcamStopStream()
+        stopPreviewStream()
         rtmpStreams.removeAll()
         srtStreamNew = nil
         srtStreamOld = nil
         ristStream = nil
         whipStream = nil
+        mobcamStream = nil
         processor = nil
     }
 
@@ -128,6 +137,7 @@ final class Media: NSObject {
                       portrait: Bool,
                       timecodesEnabled: Bool,
                       builtinAudioDelay: Double,
+                      attachDefaultAudio: Bool,
                       destinations: [SettingsStreamMultiStreamingDestination],
                       srtImplementation: SettingsStreamSrtImplementation,
                       limitAdaptiveBitrateByTransportBitrate: Bool)
@@ -135,10 +145,7 @@ final class Media: NSObject {
         self.srtImplementation = srtImplementation
         self.limitAdaptiveBitrateByTransportBitrate = limitAdaptiveBitrateByTransportBitrate
         processor?.stop()
-        srtStopStream()
-        rtmpStopStream()
-        ristStopStream()
-        whipStopStream()
+        stopAllNetStreams()
         let processor = Processor(delegate: self)
         switch proto {
         case .rtmp:
@@ -154,10 +161,6 @@ final class Media: NSObject {
                 rtmpStream.setUrl(destination.url)
                 rtmpStreams.append(rtmpStream)
             }
-            srtStreamNew = nil
-            srtStreamOld = nil
-            ristStream = nil
-            whipStream = nil
         case .srt:
             switch srtImplementation {
             case .moblin:
@@ -166,46 +169,37 @@ final class Media: NSObject {
                     timecodesEnabled: timecodesEnabled,
                     delegate: self
                 )
-                srtStreamOld = nil
             case .official:
-                srtStreamNew = nil
                 srtStreamOld = SrtStreamOfficial(
                     processor: processor,
                     timecodesEnabled: timecodesEnabled,
                     delegate: self
                 )
             }
-            rtmpStreams.removeAll()
-            ristStream = nil
-            whipStream = nil
         case .rist:
             ristStream = RistStream(processor: processor, timecodesEnabled: timecodesEnabled, delegate: self)
-            srtStreamNew = nil
-            srtStreamOld = nil
-            rtmpStreams.removeAll()
-            whipStream = nil
         case .whip:
-            whipStream = WhipStream(processor: processor, delegate: self)
-            srtStreamNew = nil
-            srtStreamOld = nil
-            ristStream = nil
-            rtmpStreams.removeAll()
+            whipStream = WhipStream(delegate: self)
+        case .mobcam:
+            mobcamStream = MobcamStream(delegate: self)
         }
         self.processor = processor
         processor.setVideoOrientation(value: portrait ? .portrait : .landscapeRight)
-        attachDefaultAudioDevice(builtinDelay: builtinAudioDelay)
+        if attachDefaultAudio {
+            attachDefaultAudioDevice(builtinDelay: builtinAudioDelay)
+        }
     }
 
     func getAudioLevel() -> Float {
-        return currentAudioLevel
+        currentAudioLevel
     }
 
     func getNumberOfAudioChannels() -> Int {
-        return numberOfAudioChannels
+        numberOfAudioChannels
     }
 
     func getAudioSampleRate() -> Double {
-        return audioSampleRate
+        audioSampleRate
     }
 
     func srtStartStream(
@@ -219,6 +213,7 @@ final class Media: NSObject {
         overheadBandwidth: Int32,
         maximumBandwidthFollowInput: Bool,
         mpegtsPacketsPerPacket: Int,
+        packetPadding: Bool,
         networkInterfaceNames: [SettingsNetworkInterfaceName],
         connectionPriorities: SettingsStreamSrtConnectionPriorities,
         dnsLookupStrategy: SettingsDnsLookupStrategy
@@ -233,6 +228,7 @@ final class Media: NSObject {
             overheadBandwidth: overheadBandwidth,
             maximumBandwidthFollowInput: maximumBandwidthFollowInput,
             mpegtsPacketsPerPacket: mpegtsPacketsPerPacket,
+            packetPadding: packetPadding,
             networkInterfaceNames: networkInterfaceNames,
             connectionPriorities: connectionPriorities
         )
@@ -249,6 +245,7 @@ final class Media: NSObject {
         overheadBandwidth: Int32,
         maximumBandwidthFollowInput: Bool,
         mpegtsPacketsPerPacket: Int,
+        packetPadding: Bool,
         networkInterfaceNames: [SettingsNetworkInterfaceName],
         connectionPriorities: SettingsStreamSrtConnectionPriorities
     ) {
@@ -267,6 +264,7 @@ final class Media: NSObject {
             delegate: self,
             passThrough: !isSrtla,
             mpegtsPacketsPerPacket: mpegtsPacketsPerPacket,
+            packetPadding: packetPadding,
             networkInterfaceNames: networkInterfaceNames,
             connectionPriorities: connectionPriorities,
             srtImplementation: srtImplementation
@@ -317,9 +315,9 @@ final class Media: NSObject {
 
     func getNumberOfDestinations() -> Int {
         if rtmpStream != nil {
-            return rtmpStreams.count
+            rtmpStreams.count
         } else {
-            return 1
+            1
         }
     }
 
@@ -354,13 +352,13 @@ final class Media: NSObject {
     }
 
     private func getSrtStats() -> SrtPerformanceData? {
-        return srtStreamNew?.getPerformanceData() ?? srtStreamOld?.getPerformanceData()
+        srtStreamNew?.getPerformanceData() ?? srtStreamOld?.getPerformanceData()
     }
 
     private func isSrtStreamActive() -> Bool {
-        return srtStreamNew != nil || srtStreamOld != nil
+        srtStreamNew != nil || srtStreamOld != nil
     }
-    
+
     private func encodedOutputOverlayLine(targetKbps: Int64?) -> String {
         let snapshot = processor?.getEncodedOutputBitrateSnapshot() ?? .zero
         let targetText = targetKbps.map(String.init) ?? "n/a"
@@ -381,12 +379,11 @@ final class Media: NSObject {
         guard let adaptiveBitrate else {
             return nil
         }
-        let sndData: Int32?
-        if let srtStreamOld {
+        let sndData: Int32? = if let srtStreamOld {
             // This one blocks if srt_connect() has not returned.
-            sndData = srtStreamOld.getSndData()
+            srtStreamOld.getSndData()
         } else {
-            sndData = stats.pktFlightSize
+            stats.pktFlightSize
         }
         guard let sndData else {
             return nil
@@ -566,17 +563,19 @@ final class Media: NSObject {
 
     func streamTransportBitrate() -> Int64? {
         if !limitAdaptiveBitrateByTransportBitrate {
-            return nil
+            nil
         } else if let rtmpStream {
-            return Int64(8 * rtmpStream.info.bitrateStats.value.latestSpeed)
+            Int64(8 * rtmpStream.info.bitrateStats.value.latestSpeed)
         } else if isSrtStreamActive() {
-            return srtTransportAvgBitrate
+            srtTransportAvgBitrate
         } else if ristStream != nil {
-            return Int64(ristStream?.getSpeed() ?? 0)
+            Int64(ristStream?.getSpeed() ?? 0)
         } else if whipStream != nil {
-            return 0
+            0
+        } else if let mobcamStream {
+            Int64(mobcamStream.getSpeed())
         } else {
-            return 0
+            0
         }
     }
 
@@ -594,11 +593,14 @@ final class Media: NSObject {
         if let whipStream {
             return whipStream.getTotalByteCount()
         }
+        if let mobcamStream {
+            return mobcamStream.getTotalByteCount()
+        }
         return total
     }
 
     private func queryContains(queryItems: [URLQueryItem], name: String) -> Bool {
-        return queryItems.contains(where: { parameter in parameter.name == name })
+        queryItems.contains(where: { parameter in parameter.name == name })
     }
 
     func makeLocalhostSrtUrl(
@@ -703,8 +705,36 @@ final class Media: NSObject {
         whipStream?.stop()
     }
 
+    func mobcamStartStream(port: UInt16, deviceName: String) {
+        adaptiveBitrate = nil
+        setAllowFrameReordering(value: false)
+        mobcamStream?.start(port: port, deviceName: deviceName)
+    }
+
+    func mobcamStopStream() {
+        mobcamStream?.stop()
+    }
+
+    func startPreviewStream(url: String, resolution: SettingsStreamResolution, bitrate: UInt32) {
+        previewStreamHandler?.stop()
+        previewStreamHandler = PreviewStreamHandler(media: self,
+                                                    url: url,
+                                                    resolution: resolution,
+                                                    bitrate: bitrate)
+        previewStreamHandler?.start()
+    }
+
+    func stopPreviewStream() {
+        previewStreamHandler?.stop()
+        previewStreamHandler = nil
+    }
+
     func setTorch(on: Bool) {
         processor?.setTorch(value: on)
+    }
+
+    func setTorchLevel(level: Float) {
+        processor?.setTorchLevel(value: level)
     }
 
     func setMute(on: Bool) {
@@ -713,6 +743,10 @@ final class Media: NSObject {
 
     func setAudioGain(gain: Float) {
         processor?.setAudioGain(gain: gain)
+    }
+
+    func setAudioDelay(delay: Double) {
+        processor?.setAudioDelay(delay: delay)
     }
 
     func registerEffect(_ effect: VideoEffect) {
@@ -731,8 +765,8 @@ final class Media: NSObject {
         processor?.unregisterAllVideoEffects()
     }
 
-    func setPendingAfterAttachEffects(effects: [VideoEffect], rotation: Double) {
-        processor?.setPendingAfterAttachEffects(effects: effects, rotation: rotation)
+    func setPendingAfterAttachEffects(effects: [VideoEffect], rotation: Double, mirror: Bool) {
+        processor?.setPendingAfterAttachEffects(effects: effects, rotation: rotation, mirror: mirror)
     }
 
     func usePendingAfterAttachEffects() {
@@ -743,16 +777,16 @@ final class Media: NSObject {
         processor?.setScreenPreview(enabled: enabled)
     }
 
+    func setShowCameraPreview(_ show: Bool) {
+        processor?.setShowCameraPreview(show)
+    }
+
     func setVideoPreviewEnabled(enabled: Bool) {
         processor?.setVideoPreviewEnabled(enabled: enabled)
     }
 
     func setVideoPreview(cameraId: UUID, drawable: PreviewView) {
         processor?.setVideoPreview(cameraId: cameraId, drawable: drawable)
-    }
-
-    func removeVideoPreview(cameraId: UUID) {
-        processor?.removeVideoPreview(cameraId: cameraId)
     }
 
     func removeAllVideoPreviews() {
@@ -771,8 +805,18 @@ final class Media: NSObject {
         processor?.setCameraControls(enabled: enabled)
     }
 
-    func takeSnapshot(age: Float, onComplete: @escaping (UIImage, CIImage, CIImage) -> Void) {
+    func takeSnapshot(age: Float, onComplete: @escaping @MainActor (UIImage, CIImage, CIImage) -> Void) {
         processor?.takeSnapshot(age: age, onComplete: onComplete)
+    }
+
+    func takePhoto() {
+        processor?.takePhoto()
+    }
+
+    func takeVideoSourceSnapshot(videoSourceId: UUID,
+                                 onComplete: @escaping @MainActor (UIImage?) -> Void)
+    {
+        processor?.takeVideoSourceSnapshot(videoSourceId: videoSourceId, onComplete: onComplete)
     }
 
     func setCleanRecordings(enabled: Bool) {
@@ -795,14 +839,14 @@ final class Media: NSObject {
     }
 
     func getCanvasSize() -> CGSize {
-        return canvasSize
+        canvasSize
     }
 
     func setFps(fps: Int, preferAutoFps: Bool) {
         processor?.setFps(value: Double(fps), preferAutoFps: preferAutoFps)
     }
 
-    func setColorSpace(colorSpace: AVCaptureColorSpace, onComplete: @escaping () -> Void) {
+    func setColorSpace(colorSpace: AVCaptureColorSpace, onComplete: @escaping @MainActor () -> Void) {
         processor?.setColorSpace(colorSpace: colorSpace, onComplete: onComplete)
     }
 
@@ -823,9 +867,9 @@ final class Media: NSObject {
 
     func getVideoStreamBitrate(bitrate: UInt32) -> UInt32 {
         if let adaptiveBitrate {
-            return adaptiveBitrate.getCurrentBitrate()
+            adaptiveBitrate.getCurrentBitrate()
         } else {
-            return bitrate
+            bitrate
         }
     }
 
@@ -899,6 +943,10 @@ final class Media: NSObject {
         processor?.setVideoOrientation(value: value)
     }
 
+    func setGraphicsImplementation(_ value: SettingsGraphicsImplementation) {
+        processor?.setGraphicsImplementation(value: value)
+    }
+
     func setCameraZoomLevel(device: AVCaptureDevice?, level: Float, rate: Float?) -> Float? {
         guard let device else {
             logger.info("Device not ready to zoom")
@@ -934,16 +982,14 @@ final class Media: NSObject {
         return Float(device.videoZoomFactor)
     }
 
-    func attachCamera(params: VideoUnitAttachParams, onSuccess: (() -> Void)? = nil) {
+    func attachCamera(params: VideoUnitAttachParams, onSuccess: (@MainActor () -> Void)? = nil) {
         processor?.attachCamera(
             params: params,
             onError: {
                 self.delegate.mediaError(error: $0)
             },
             onSuccess: {
-                DispatchQueue.main.async {
-                    onSuccess?()
-                }
+                onSuccess?()
             }
         )
     }
@@ -951,28 +997,33 @@ final class Media: NSObject {
     func attachBufferedCamera(
         devices: CaptureDevices,
         builtinDelay: Double,
-        cameraPreviewLayer: AVCaptureVideoPreviewLayer,
+        cameraPreviewLayers: [UUID: AVCaptureVideoPreviewLayer],
+        attachCameraPreview: Bool,
         showCameraPreview: Bool,
         externalDisplayPreview: Bool,
         cameraId: UUID,
+        preferredVideoStabilizationMode: AVCaptureVideoStabilizationMode,
         ignoreFramesAfterAttachSeconds: Double,
         fillFrame: Bool,
         isLandscapeStreamAndPortraitUi: Bool,
         forceSceneTransition: Bool,
-        macScreenCapture: Bool
+        macScreenCapture: Bool,
+        attachPhotoShoot: Bool
     ) {
         let params = VideoUnitAttachParams(devices: devices,
                                            builtinDelay: builtinDelay,
-                                           cameraPreviewLayer: cameraPreviewLayer,
+                                           cameraPreviewLayers: cameraPreviewLayers,
+                                           attachCameraPreview: attachCameraPreview,
                                            showCameraPreview: showCameraPreview,
                                            externalDisplayPreview: externalDisplayPreview,
                                            bufferedVideo: cameraId,
-                                           preferredVideoStabilizationMode: .off,
+                                           preferredVideoStabilizationMode: preferredVideoStabilizationMode,
                                            ignoreFramesAfterAttachSeconds: ignoreFramesAfterAttachSeconds,
                                            fillFrame: fillFrame,
                                            isLandscapeStreamAndPortraitUi: isLandscapeStreamAndPortraitUi,
                                            forceSceneTransition: forceSceneTransition,
-                                           macScreenCapture: macScreenCapture)
+                                           macScreenCapture: macScreenCapture,
+                                           attachPhotoShoot: attachPhotoShoot)
         processor?.attachCamera(params: params)
     }
 
@@ -983,8 +1034,11 @@ final class Media: NSObject {
         processor?.attachAudio(params: params)
     }
 
-    func addBufferedAudio(cameraId: UUID, name: String, latency: Double) {
-        processor?.addBufferedAudio(cameraId: cameraId, name: name, latency: latency)
+    func addBufferedAudio(cameraId: UUID, name: String, latency: Double, trackDrift: Bool = true) {
+        processor?.addBufferedAudio(cameraId: cameraId,
+                                    name: name,
+                                    latency: latency,
+                                    trackDrift: trackDrift)
     }
 
     func removeBufferedAudio(cameraId: UUID) {
@@ -999,8 +1053,11 @@ final class Media: NSObject {
         processor?.setBufferedAudioTargetLatency(cameraId: cameraId, latency)
     }
 
-    func addBufferedVideo(cameraId: UUID, name: String, latency: Double) {
-        processor?.addBufferedVideo(cameraId: cameraId, name: name, latency: latency)
+    func addBufferedVideo(cameraId: UUID, name: String, latency: Double, trackDrift: Bool = true) {
+        processor?.addBufferedVideo(cameraId: cameraId,
+                                    name: name,
+                                    latency: latency,
+                                    trackDrift: trackDrift)
     }
 
     func removeBufferedVideo(cameraId: UUID) {
@@ -1027,7 +1084,7 @@ final class Media: NSObject {
     }
 
     func getProcessor() -> Processor? {
-        return processor
+        processor
     }
 
     func startRecording(
@@ -1059,12 +1116,11 @@ final class Media: NSObject {
                                               videoBitrate: Int?,
                                               keyFrameInterval: Int?) -> [String: Any]
     {
-        var codec: AVVideoCodecType
-        switch videoCodec {
+        let codec = switch videoCodec {
         case .h264avc:
-            codec = AVVideoCodecType.h264
+            AVVideoCodecType.h264
         case .h265hevc:
-            codec = AVVideoCodecType.hevc
+            AVVideoCodecType.hevc
         }
         var settings: [String: Any] = [
             AVVideoCodecKey: codec,
@@ -1102,7 +1158,7 @@ final class Media: NSObject {
 }
 
 extension Media: ProcessorDelegate {
-    func stream(audioLevel: Float, numberOfAudioChannels: Int, sampleRate: Double) {
+    func streamAudioLevel(audioLevel: Float, numberOfAudioChannels: Int, sampleRate: Double) {
         DispatchQueue.main.async {
             if becameMuted(old: self.currentAudioLevel, new: audioLevel) || becameUnmuted(
                 old: self.currentAudioLevel,
@@ -1118,7 +1174,7 @@ extension Media: ProcessorDelegate {
         }
     }
 
-    func streamVideo(lowFpsImage: Data?, frameNumber: UInt64) {
+    func streamLowFpsImage(lowFpsImage: Data?, frameNumber: UInt64) {
         delegate.mediaOnLowFpsImage(lowFpsImage, frameNumber)
     }
 
@@ -1194,7 +1250,7 @@ extension Media: SrtlaDelegate {
                         guard let self else {
                             return false
                         }
-                        if let srtla = self.srtlaClient {
+                        if let srtla = srtlaClient {
                             srtlaClientQueue.async {
                                 srtla.handleLocalPacket(packet: data)
                             }
@@ -1214,7 +1270,7 @@ extension Media: SrtlaDelegate {
                 }
             } else {
                 self.srtStreamNew?.open(streamId: extractSrtStreamId(url: self.srtUrl),
-                                        latency: UInt16(self.latency),
+                                        latency: UInt16(clamping: self.latency),
                                         experimental: self.experimental)
             }
         }
@@ -1227,14 +1283,20 @@ extension Media: SrtlaDelegate {
         }
     }
 
+    func srtlaReceivedPacket(packet: Data) {
+        srtStreamNew?.inputPacket(packet: packet)
+    }
+
     func moblinkStreamerDestinationAddress(address: String, port: UInt16) {
         DispatchQueue.main.async {
-            self.delegate.mediaStrlaRelayDestinationAddress(address: address, port: port)
+            self.delegate.mediaMoblinkStreamerDestinationAddress(address: address, port: port)
         }
     }
 
-    func srtlaReceivedPacket(packet: Data) {
-        srtStreamNew?.inputPacket(packet: packet)
+    func moblinkStreamerRestartTunnel(relayId: UUID) {
+        DispatchQueue.main.async {
+            self.delegate.mediaMoblinkStreamerRestartTunnel(relayId: relayId)
+        }
     }
 }
 
@@ -1256,7 +1318,7 @@ extension Media: RistStreamDelegate {
 
     func ristStreamRelayDestinationAddress(address: String, port: UInt16) {
         DispatchQueue.main.async {
-            self.delegate.mediaStrlaRelayDestinationAddress(address: address, port: port)
+            self.delegate.mediaMoblinkStreamerDestinationAddress(address: address, port: port)
         }
     }
 }
@@ -1329,8 +1391,123 @@ extension Media: WhipStreamDelegate {
 
     func whipStreamPerform(request: URLRequest,
                            queue: DispatchQueue,
-                           completion: ((Data?, URLResponse?, (any Error)?) -> Void)?)
+                           completion: (@MainActor (Data?, URLResponse?, (any Error)?) -> Void)?)
     {
         delegate.mediaOnWhipPerform(request: request, queue: queue, completion: completion)
+    }
+
+    func whipStreamStartEncoding(_ delegate: any AudioEncoderDelegate & VideoEncoderDelegate) {
+        nonisolated(unsafe) let delegate = delegate
+        processorPipelineQueue.async {
+            self.processor?.startEncoding(delegate)
+        }
+    }
+
+    func whipStreamStopEncoding(_ delegate: any AudioEncoderDelegate & VideoEncoderDelegate) {
+        nonisolated(unsafe) let delegate = delegate
+        processorPipelineQueue.async {
+            self.processor?.stopEncoding(delegate)
+        }
+    }
+}
+
+extension Media: MobcamStreamDelegate {
+    func mobcamStreamOnConnected() {
+        delegate.mediaOnMobcamConnected()
+    }
+
+    func mobcamStreamOnDisconnected(reason: String) {
+        delegate.mediaOnMobcamDisconnected(reason)
+    }
+
+    func mobcamStreamStartEncoding(_ delegate: any AudioEncoderDelegate & VideoEncoderDelegate) {
+        nonisolated(unsafe) let delegate = delegate
+        processorPipelineQueue.async {
+            self.processor?.startEncoding(delegate)
+        }
+    }
+
+    func mobcamStreamStopEncoding(_ delegate: any AudioEncoderDelegate & VideoEncoderDelegate) {
+        nonisolated(unsafe) let delegate = delegate
+        processorPipelineQueue.async {
+            self.processor?.stopEncoding(delegate)
+        }
+    }
+}
+
+private final class PreviewStreamHandler: @unchecked Sendable {
+    private let media: Media
+    private let url: String
+    private let resolution: SettingsStreamResolution
+    private let bitrate: UInt32
+    private var previewStream: WhipStream?
+    private let reconnectTimer = SimpleTimer(queue: .main)
+
+    init(media: Media, url: String, resolution: SettingsStreamResolution, bitrate: UInt32) {
+        self.media = media
+        self.url = url
+        self.resolution = resolution
+        self.bitrate = bitrate
+    }
+
+    func start() {
+        stop()
+        previewStream = WhipStream(delegate: self)
+        previewStream?.start(
+            url: url,
+            headers: [],
+            iceServers: [defaultStunServer],
+            videoCodec: .h264avc,
+            audioCodec: .opus,
+            videoBitrate: Double(bitrate)
+        )
+    }
+
+    func stop() {
+        reconnectTimer.stop()
+        previewStream?.stop()
+        previewStream = nil
+    }
+
+    private func reconnectSoon(reason: String) {
+        reconnectTimer.startSingleShot(timeout: 5) { [weak self] in
+            guard let self else {
+                return
+            }
+            logger.info("preview-stream: Reconnecting due to: \(reason)")
+            start()
+        }
+    }
+}
+
+extension PreviewStreamHandler: WhipStreamDelegate {
+    func whipStreamOnConnected() {}
+
+    func whipStreamOnDisconnected(reason: String) {
+        DispatchQueue.main.async {
+            self.reconnectSoon(reason: reason)
+        }
+    }
+
+    func whipStreamPerform(request: URLRequest,
+                           queue: DispatchQueue,
+                           completion: (@MainActor (Data?, URLResponse?, (any Error)?) -> Void)?)
+    {
+        media.delegate.mediaOnWhipPerform(request: request, queue: queue, completion: completion)
+    }
+
+    func whipStreamStartEncoding(_ delegate: any AudioEncoderDelegate & VideoEncoderDelegate) {
+        var videoSettings = VideoEncoderSettings()
+        videoSettings.videoSize = resolution.dimensions(portrait: false)
+        videoSettings.bitrate = bitrate
+        videoSettings.profileLevel = kVTProfileLevel_H264_Baseline_AutoLevel as String
+        var audioSettings = AudioEncoderSettings()
+        audioSettings.bitrate = 64000
+        audioSettings.format = .opus
+        media.processor?.startPreviewEncoding(delegate, videoSettings, audioSettings)
+    }
+
+    func whipStreamStopEncoding(_: any AudioEncoderDelegate & VideoEncoderDelegate) {
+        media.processor?.stopPreviewEncoding()
     }
 }

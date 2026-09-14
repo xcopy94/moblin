@@ -8,9 +8,9 @@ struct CustomLutView: View {
 
     func loadImage() -> UIImage? {
         if let data = model.imageStorage.tryRead(id: lut.id) {
-            return UIImage(data: data)
+            UIImage(data: data)
         } else {
-            return nil
+            nil
         }
     }
 
@@ -28,7 +28,7 @@ struct CustomLutView: View {
                         HCenter {
                             Image(uiImage: image)
                                 .resizable()
-                                .aspectRatio(contentMode: .fit)
+                                .scaledToFit()
                                 .frame(width: 1920 / 6, height: 1080 / 6)
                         }
                     }
@@ -84,6 +84,7 @@ private struct CameraSettingsCubeLutsView: View {
 private struct CameraSettingsPngLutsView: View {
     @EnvironmentObject var model: Model
     @ObservedObject var color: SettingsColor
+    @State var presentingPicker: Bool = false
     @State var selectedImageItem: PhotosPickerItem?
 
     private func deleteLutPng(at offsets: IndexSet) {
@@ -104,11 +105,16 @@ private struct CameraSettingsPngLutsView: View {
                 }
                 .onDelete(perform: deleteLutPng)
             }
-            PhotosPicker(selection: $selectedImageItem, matching: .images) {
+            Button {
+                presentingPicker = true
+            } label: {
                 HCenter {
                     Text("Add")
                 }
             }
+            .photosPicker(isPresented: $presentingPicker,
+                          selection: $selectedImageItem,
+                          matching: .images)
             .onChange(of: selectedImageItem) { imageItem in
                 imageItem?.loadTransferable(type: Data.self) { result in
                     switch result {
@@ -154,7 +160,7 @@ struct CameraSettingsLutsView: View {
 }
 
 private struct CameraSettingsAppleLogLutView: View {
-    @EnvironmentObject var model: Model
+    let model: Model
     @ObservedObject var color: SettingsColor
 
     var body: some View {
@@ -171,7 +177,7 @@ private struct CameraSettingsAppleLogLutView: View {
             }
             Section {
                 Picker("", selection: $color.lut) {
-                    ForEach(model.allLuts()) { lut in
+                    ForEach(color.allLuts()) { lut in
                         Text(lut.name)
                             .tag(lut.id)
                     }
@@ -184,6 +190,44 @@ private struct CameraSettingsAppleLogLutView: View {
             }
         }
         .navigationTitle("Apple Log LUT")
+    }
+}
+
+private struct CameraPreviewSettingsView: View {
+    @EnvironmentObject var model: Model
+    @ObservedObject var database: Database
+
+    var body: some View {
+        Section {
+            Toggle("Instant camera preview", isOn: $database.alwaysAttachCameraPreview)
+                .onChange(of: database.alwaysAttachCameraPreview) { _ in
+                    model.reattachCamera()
+                }
+        } footer: {
+            Text("""
+            The Camera preview quick button shows and hides the camera preview instantly, without \
+            the scene switch transition. Uses slightly more system resources.
+            """)
+        }
+    }
+}
+
+private struct PhotoShootSettingsView: View {
+    @EnvironmentObject var model: Model
+    @ObservedObject var database: Database
+
+    var body: some View {
+        Section {
+            Toggle("Instant photo shoot", isOn: $database.alwaysAttachPhotoShoot)
+                .onChange(of: database.alwaysAttachPhotoShoot) { _ in
+                    model.reattachCamera()
+                }
+        } footer: {
+            Text("""
+            The Photo shoot quick button starts and stops the photo shoot instantly, without \
+            the scene switch transition. Uses slightly more system resources.
+            """)
+        }
     }
 }
 
@@ -236,6 +280,8 @@ struct CameraSettingsView: View {
                 }
             }
             if database.showAllSettings {
+                CameraPreviewSettingsView(database: database)
+                PhotoShootSettingsView(database: database)
                 if model.supportsAppleLog {
                     Section {
                         Picker("Color space", selection: $color.space) {
@@ -248,7 +294,7 @@ struct CameraSettingsView: View {
                         }
                         .disabled(model.isLive || model.isRecording)
                         NavigationLink {
-                            CameraSettingsAppleLogLutView(color: color)
+                            CameraSettingsAppleLogLutView(model: model, color: color)
                         } label: {
                             Text("Apple Log LUT")
                         }

@@ -7,9 +7,9 @@ enum SettingsDjiDeviceUrlType: String, Codable, CaseIterable {
     func toString() -> String {
         switch self {
         case .server:
-            return String(localized: "Server")
+            String(localized: "Server")
         case .custom:
-            return String(localized: "Custom")
+            String(localized: "Custom")
         }
     }
 }
@@ -24,15 +24,15 @@ enum SettingsDjiDeviceImageStabilization: String, CaseIterable, Codable {
     func toString() -> String {
         switch self {
         case .off:
-            return String(localized: "Off")
+            String(localized: "Off")
         case .rockSteady:
-            return String(localized: "RockSteady")
+            String(localized: "RockSteady")
         case .rockSteadyPlus:
-            return String(localized: "RockSteady+")
+            String(localized: "RockSteady+")
         case .horizonBalancing:
-            return String(localized: "HorizonBalancing")
+            String(localized: "HorizonBalancing")
         case .horizonSteady:
-            return String(localized: "HorizonSteady")
+            String(localized: "HorizonSteady")
         }
     }
 }
@@ -50,53 +50,104 @@ enum SettingsDjiDeviceModel: String, Codable {
     case osmoAction5Pro
     case osmoAction6
     case osmoPocket3
+    case osmoPocket4
     case osmo360
     case unknown
 
-    func hasImageStabilizatin() -> Bool {
+    func hasImageStabilization() -> Bool {
         switch self {
         case .osmoAction2:
-            return false
+            false
         case .osmoAction3:
-            return false
+            false
         case .osmoAction4:
-            return true
+            true
         case .osmoAction5Pro:
-            return true
+            true
         case .osmoAction6:
-            return true
+            true
         case .osmoPocket3:
-            return false
+            false
+        case .osmoPocket4:
+            false
         case .osmo360:
-            return true
+            true
         case .unknown:
-            return false
+            false
         }
     }
 
     func hasNewProtocol() -> Bool {
         switch self {
         case .osmoAction2:
-            return false
+            false
         case .osmoAction3:
-            return false
+            false
         case .osmoAction4:
-            return false
+            false
         case .osmoAction5Pro:
-            return true
+            true
         case .osmoAction6:
-            return true
+            true
         case .osmoPocket3:
-            return false
+            false
+        case .osmoPocket4:
+            true
         case .osmo360:
-            return true
+            true
         case .unknown:
-            return false
+            false
+        }
+    }
+
+    func hasVideoCodec() -> Bool {
+        switch self {
+        case .osmoAction2:
+            false
+        case .osmoAction3:
+            false
+        case .osmoAction4:
+            false
+        case .osmoAction5Pro:
+            false
+        case .osmoAction6:
+            true
+        case .osmoPocket3:
+            false
+        case .osmoPocket4:
+            true
+        case .osmo360:
+            false
+        case .unknown:
+            false
         }
     }
 }
 
-var djiDeviceBitrates: [UInt32] = [
+enum SettingsDjiDeviceVideoCodec: String, Codable, CaseIterable {
+    case h265hevc = "H.265/HEVC"
+    case h264avc = "H.264/AVC"
+
+    func toDjiCodec() -> String {
+        switch self {
+        case .h264avc:
+            "AVC"
+        case .h265hevc:
+            "HEVC"
+        }
+    }
+
+    func toDjiEnhancedRtmp() -> Bool {
+        switch self {
+        case .h264avc:
+            false
+        case .h265hevc:
+            true
+        }
+    }
+}
+
+let djiDeviceBitrates: [UInt32] = [
     20_000_000,
     16_000_000,
     12_000_000,
@@ -107,7 +158,7 @@ var djiDeviceBitrates: [UInt32] = [
     2_000_000,
 ]
 
-var djiDeviceFpss: [Int] = [25, 30]
+let djiDeviceFpss: [Int] = [25, 30]
 
 class SettingsDjiDevice: Codable, Identifiable, ObservableObject, Named {
     static let baseName = String(localized: "My device")
@@ -119,16 +170,18 @@ class SettingsDjiDevice: Codable, Identifiable, ObservableObject, Named {
     @Published var wifiPassword: String = ""
     @Published var rtmpUrlType: SettingsDjiDeviceUrlType = .server
     @Published var serverRtmpStreamId: UUID = .init()
-    @Published var serverRtmpUrl: String = ""
+    @Published var serverRtmpUrl: String?
     @Published var customRtmpUrl: String = ""
     @Published var autoRestartStream: Bool = false
     @Published var imageStabilization: SettingsDjiDeviceImageStabilization = .off
     @Published var resolution: SettingsDjiDeviceResolution = .r1080p
     @Published var fps: Int = 30
     @Published var bitrate: UInt32 = 6_000_000
+    @Published var videoCodec: SettingsDjiDeviceVideoCodec = .h265hevc
     @Published var isStarted: Bool = false
     @Published var model: SettingsDjiDeviceModel = .unknown
     @Published var state: DjiDeviceState?
+    let autoRestartStreamTimer = SimpleTimer(queue: .main)
 
     init() {
         bluetoothPeripheralName = nil
@@ -136,26 +189,27 @@ class SettingsDjiDevice: Codable, Identifiable, ObservableObject, Named {
     }
 
     enum CodingKeys: CodingKey {
-        case id,
-             name,
-             bluetoothPeripheralName,
-             bluetoothPeripheralId,
-             wifiSsid,
-             wifiPassword,
-             rtmpUrlType,
-             serverRtmpStreamId,
-             serverRtmpUrl,
-             customRtmpUrl,
-             autoRestartStream,
-             imageStabilization,
-             resolution,
-             fps,
-             bitrate,
-             isStarted,
-             model
+        case id
+        case name
+        case bluetoothPeripheralName
+        case bluetoothPeripheralId
+        case wifiSsid
+        case wifiPassword
+        case rtmpUrlType
+        case serverRtmpStreamId
+        case serverRtmpUrl
+        case customRtmpUrl
+        case autoRestartStream
+        case imageStabilization
+        case resolution
+        case fps
+        case bitrate
+        case videoCodec
+        case isStarted
+        case model
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.id, id)
         try container.encode(.name, name)
@@ -172,11 +226,12 @@ class SettingsDjiDevice: Codable, Identifiable, ObservableObject, Named {
         try container.encode(.resolution, resolution)
         try container.encode(.fps, fps)
         try container.encode(.bitrate, bitrate)
+        try container.encode(.videoCodec, videoCodec)
         try container.encode(.isStarted, isStarted)
         try container.encode(.model, model)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = container.decode(.id, UUID.self, .init())
         name = container.decode(.name, String.self, Self.baseName)
@@ -186,7 +241,7 @@ class SettingsDjiDevice: Codable, Identifiable, ObservableObject, Named {
         wifiPassword = container.decode(.wifiPassword, String.self, "")
         rtmpUrlType = container.decode(.rtmpUrlType, SettingsDjiDeviceUrlType.self, .server)
         serverRtmpStreamId = container.decode(.serverRtmpStreamId, UUID.self, .init())
-        serverRtmpUrl = container.decode(.serverRtmpUrl, String.self, "")
+        serverRtmpUrl = container.decode(.serverRtmpUrl, String?.self, nil)
         customRtmpUrl = container.decode(.customRtmpUrl, String.self, "")
         autoRestartStream = container.decode(.autoRestartStream, Bool.self, false)
         imageStabilization = container.decode(
@@ -197,6 +252,7 @@ class SettingsDjiDevice: Codable, Identifiable, ObservableObject, Named {
         resolution = container.decode(.resolution, SettingsDjiDeviceResolution.self, .r1080p)
         fps = container.decode(.fps, Int.self, 30)
         bitrate = container.decode(.bitrate, UInt32.self, 6_000_000)
+        videoCodec = container.decode(.videoCodec, SettingsDjiDeviceVideoCodec.self, .h265hevc)
         isStarted = container.decode(.isStarted, Bool.self, false)
         model = container.decode(.model, SettingsDjiDeviceModel.self, .unknown)
     }
@@ -211,12 +267,12 @@ class SettingsDjiDevices: Codable, ObservableObject {
         case devices
     }
 
-    func encode(to encoder: Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(.devices, devices)
     }
 
-    required init(from decoder: Decoder) throws {
+    required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         devices = container.decode(.devices, [SettingsDjiDevice].self, [])
     }

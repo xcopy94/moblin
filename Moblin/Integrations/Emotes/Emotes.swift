@@ -9,32 +9,34 @@ enum EmotesPlatform {
 
 class Emote {
     let url: URL
+    let stillUrl: URL?
 
-    init(url: URL) {
+    init(url: URL, stillUrl: URL? = nil) {
         self.url = url
+        self.stillUrl = stillUrl
     }
 }
 
-class Emotes {
+class Emotes: @unchecked Sendable {
     private var emotes: [String: Emote] = [:]
-    private var task: Task<Void, Error>?
+    private var task: Task<Void, any Error>?
     private var ready: Bool = false
 
     func isReady() -> Bool {
-        return ready
+        ready
     }
 
     func start(
         platform: EmotesPlatform,
         channelId: String,
-        onError: @escaping (String, String) -> Void,
-        onOk: @escaping (String) -> Void,
+        onError: @escaping @MainActor (String, String) -> Void,
+        onOk: @escaping @MainActor (String) -> Void,
         settings: SettingsStreamChat
     ) {
         let settings = settings.clone()
         ready = false
         emotes.removeAll()
-        task = Task {
+        task = Task { @MainActor in
             var firstRetry = true
             var retryTime = 30
             while !self.ready {
@@ -43,19 +45,19 @@ class Emotes {
                     channelId: channelId,
                     enabled: settings.bttvEmotes
                 )
-                self.emotes = self.emotes.merging(bttvEmotes) { $1 }
+                self.addEmotes(bttvEmotes)
                 let (ffzEmotes, ffzError) = await fetchFfzEmotes(
                     platform: platform,
                     channelId: channelId,
                     enabled: settings.ffzEmotes
                 )
-                self.emotes = self.emotes.merging(ffzEmotes) { $1 }
+                self.addEmotes(ffzEmotes)
                 let (seventvEmotes, seventvError) = await fetchSeventvEmotes(
                     platform: platform,
                     channelId: channelId,
                     enabled: settings.seventvEmotes
                 )
-                self.emotes = self.emotes.merging(seventvEmotes) { $1 }
+                self.addEmotes(seventvEmotes)
                 if Task.isCancelled {
                     return
                 }
@@ -84,6 +86,10 @@ class Emotes {
         }
     }
 
+    func addEmotes(_ emotes: [String: Emote]) {
+        self.emotes = self.emotes.merging(emotes) { $1 }
+    }
+
     func stop() {
         ready = false
         task?.cancel()
@@ -92,22 +98,19 @@ class Emotes {
 
     func createSegments(text: String, id: inout Int) -> [ChatPostSegment] {
         var segments: [ChatPostSegment] = []
-        var parts: [String] = []
-        for word in text.components(separatedBy: .whitespaces) {
-            guard let emote = emotes[word] else {
-                parts.append(word)
+        for word in text.split(whereSeparator: { $0.isWhitespace }) {
+            guard let emote = emotes[String(word)] else {
+                segments.append(ChatPostSegment(id: id, text: "\(word) "))
+                id += 1
                 continue
             }
             segments.append(ChatPostSegment(
                 id: id,
-                text: parts.joined(separator: " "),
-                url: emote.url
+                text: "",
+                url: ChatPostUrl(moving: emote.url, still: emote.stillUrl ?? emote.url)
             ))
             id += 1
-            parts.removeAll()
-        }
-        if !parts.isEmpty {
-            segments.append(ChatPostSegment(id: id, text: parts.joined(separator: " ")))
+            segments.append(ChatPostSegment(id: id, text: ""))
             id += 1
         }
         return segments

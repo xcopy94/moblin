@@ -1,12 +1,17 @@
 import CoreImage
+import MetalPetal
 
-final class ImageEffect: VideoEffect {
+final class ImageEffect: VideoEffect, @unchecked Sendable {
     private let filter = CIFilter.sourceOverCompositing()
-    private var originalImage: CIImage?
+    private var originalImage: EffectImageCiImage?
     private var sceneWidget: SettingsSceneWidget?
 
     init(imageStorage: ImageStorage, widgetId: UUID) {
         super.init()
+        loadImage(imageStorage: imageStorage, widgetId: widgetId)
+    }
+
+    func loadImage(imageStorage: ImageStorage, widgetId: UUID) {
         DispatchQueue.global().async {
             guard let data = imageStorage.read(id: widgetId) else {
                 return
@@ -14,8 +19,9 @@ final class ImageEffect: VideoEffect {
             guard let image = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
                 return
             }
+            let originalImage = image.toEffectImage(isOpaque: false)
             processorPipelineQueue.async {
-                self.originalImage = image
+                self.originalImage = originalImage
             }
         }
     }
@@ -31,7 +37,7 @@ final class ImageEffect: VideoEffect {
             return image
         }
         filter.inputImage = applyEffectsResizeMirrorMove(
-            originalImage,
+            originalImage.getCiImage(),
             sceneWidget,
             false,
             image.extent,
@@ -39,5 +45,16 @@ final class ImageEffect: VideoEffect {
         )
         filter.backgroundImage = image
         return filter.outputImage ?? image
+    }
+
+    override func executeMetalPetal(_ image: MTIImage, _ info: VideoEffectInfo) -> MTIImage {
+        guard let originalImage, let sceneWidget else {
+            return image
+        }
+        return applyEffectsResizeMirrorMoveMetalPetal(originalImage.getMetalPetalImage(),
+                                                      sceneWidget,
+                                                      false,
+                                                      image,
+                                                      info)
     }
 }
