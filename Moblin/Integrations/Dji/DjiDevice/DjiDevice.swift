@@ -1,4 +1,4 @@
-@preconcurrency import CoreBluetooth
+import CoreBluetooth
 import Foundation
 
 // The actual values do not matter.
@@ -24,8 +24,8 @@ private let configureType: UInt32 = 0x8E0240
 private let startStreamingType: UInt32 = 0x780840
 private let statusType: UInt32 = 0x020D00
 
-private let fff4Id = CBUUID(string: "FFF4")
-private let fff5Id = CBUUID(string: "FFF5")
+private nonisolated(unsafe) let fff4Id = CBUUID(string: "FFF4")
+private nonisolated(unsafe) let fff5Id = CBUUID(string: "FFF5")
 
 private let pairPinCode = "mbln"
 
@@ -45,10 +45,12 @@ enum DjiDeviceState {
     case stoppingStream
 }
 
+@MainActor
 protocol DjiDeviceDelegate: AnyObject {
     func djiDeviceStreamingState(_ device: DjiDevice, state: DjiDeviceState)
 }
 
+@MainActor
 class DjiDevice: NSObject {
     private var wifiSsid: String?
     private var wifiPassword: String?
@@ -64,8 +66,8 @@ class DjiDevice: NSObject {
     private var fff5Characteristic: CBCharacteristic?
     private var state: DjiDeviceState = .idle
     weak var delegate: (any DjiDeviceDelegate)?
-    private let startStreamingTimer = SimpleTimer(queue: .main)
-    private let stopStreamingTimer = SimpleTimer(queue: .main)
+    private let startStreamingTimer = MainTimer()
+    private let stopStreamingTimer = MainTimer()
     private var model: SettingsDjiDeviceModel = .unknown
     private var batteryPercentage: Int?
 
@@ -165,7 +167,7 @@ class DjiDevice: NSObject {
     }
 }
 
-extension DjiDevice: CBCentralManagerDelegate {
+extension DjiDevice: @MainActor CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
         case .poweredOn:
@@ -200,7 +202,7 @@ extension DjiDevice: CBCentralManagerDelegate {
     }
 }
 
-extension DjiDevice: CBPeripheralDelegate {
+extension DjiDevice: @MainActor CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices _: (any Error)?) {
         guard let peripheralServices = peripheral.services else {
             return

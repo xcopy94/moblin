@@ -1,6 +1,7 @@
 import AVFAudio
 import SwiftUI
 
+@MainActor
 class AudioLevel: ObservableObject {
     @Published var level: Float = defaultAudioLevel
 
@@ -13,12 +14,14 @@ class AudioLevel: ObservableObject {
     }
 }
 
+@MainActor
 class AudioProvider: ObservableObject {
     let level = AudioLevel()
     @Published var numberOfChannels: Int = 0
     @Published var sampleRate: Double = 0
 }
 
+@MainActor
 class Mic: ObservableObject {
     @Published var current: SettingsMicsMic = noMic
     @Published var inputGain: Float = 1.0
@@ -312,7 +315,13 @@ extension Model {
         }
     }
 
-    @objc func handleAudioRouteChange(notification _: Notification) {
+    @objc nonisolated func handleAudioRouteChange(notification _: Notification) {
+        DispatchQueue.main.async {
+            self.handleAudioRouteChange()
+        }
+    }
+
+    private func handleAudioRouteChange() {
         // Not sure about this...
         if isMac() {
             return
@@ -476,7 +485,6 @@ extension Model {
     }
 
     private func listMicsAsync(onCompleted: @MainActor @escaping ([SettingsMicsMic]) -> Void) {
-        nonisolated(unsafe)
         var mics: [SettingsMicsMic] = []
         listMediaPlayerMics(&mics)
         listRistMics(&mics)
@@ -485,10 +493,10 @@ extension Model {
         listRtmpMics(&mics)
         listWhipMics(&mics)
         listWhepMics(&mics)
-        processorControlQueue.async {
+        processorControlQueue.async { [mics] in
+            var mics = mics
             listAudioSessionMics(&mics)
-            let mics = mics
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [mics] in
                 onCompleted(mics)
             }
         }

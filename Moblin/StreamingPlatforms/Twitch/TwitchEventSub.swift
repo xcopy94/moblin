@@ -398,6 +398,7 @@ private struct NotificationChannelModerateMessage: Decodable {
 
 private let url = URL(string: "wss://eventsub.wss.twitch.tv/ws")!
 
+@MainActor
 protocol TwitchEventSubDelegate: AnyObject {
     func twitchEventSubChannelFollow(event: TwitchEventSubNotificationChannelFollowEvent)
     func twitchEventSubChannelSubscribe(event: TwitchEventSubNotificationChannelSubscribeEvent)
@@ -452,6 +453,7 @@ private let subTypeChannelPredictionProgress = "channel.prediction.progress"
 private let subTypeChannelPredictionLock = "channel.prediction.lock"
 private let subTypeChannelPredictionEnd = "channel.prediction.end"
 
+@MainActor
 final class TwitchEventSub: NSObject {
     private var webSocket: WebSocketClient
     private var remoteControl: Bool
@@ -461,7 +463,7 @@ final class TwitchEventSub: NSObject {
     private let delegate: any TwitchEventSubDelegate
     private var connected = false
     private var started = false
-    private let connectDelayTimer = SimpleTimer(queue: .main)
+    private let connectDelayTimer = MainTimer()
 
     init(
         remoteControl: Bool,

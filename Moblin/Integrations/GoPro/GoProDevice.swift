@@ -1,4 +1,4 @@
-@preconcurrency import CoreBluetooth
+import CoreBluetooth
 import Foundation
 
 enum GoProDeviceState: Equatable {
@@ -26,10 +26,12 @@ private let statusPollInterval = 1.0
 private let startShutterDelay = 2.0
 private let batteryPollKeepAlives = 10
 
+@MainActor
 protocol GoProDeviceDelegate: AnyObject {
     func goProDeviceStreamingState(_ device: GoProDevice, state: GoProDeviceState)
 }
 
+@MainActor
 final class GoProDevice: NSObject {
     weak var delegate: (any GoProDeviceDelegate)?
 
@@ -59,13 +61,13 @@ final class GoProDevice: NSObject {
     private var scanMatch: OpenGopro_ResponseGetApEntries.ScanEntry?
     private var supportedLenses: [OpenGopro_EnumLens]?
 
-    private let operationTimeoutTimer = SimpleTimer(queue: .main)
-    private let wifiTimeoutTimer = SimpleTimer(queue: .main)
-    private let pairingFallbackTimer = SimpleTimer(queue: .main)
-    private let statusPollTimer = SimpleTimer(queue: .main)
-    private let startShutterTimer = SimpleTimer(queue: .main)
-    private let stopTimer = SimpleTimer(queue: .main)
-    private let keepAliveTimer = SimpleTimer(queue: .main)
+    private let operationTimeoutTimer = MainTimer()
+    private let wifiTimeoutTimer = MainTimer()
+    private let pairingFallbackTimer = MainTimer()
+    private let statusPollTimer = MainTimer()
+    private let startShutterTimer = MainTimer()
+    private let stopTimer = MainTimer()
+    private let keepAliveTimer = MainTimer()
 
     func startLiveStream(
         wifiSsid: String,
@@ -535,7 +537,7 @@ final class GoProDevice: NSObject {
     }
 }
 
-extension GoProDevice: CBCentralManagerDelegate {
+extension GoProDevice: @MainActor CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         guard central.state == .poweredOn else {
             if central.state != .unknown, central.state != .resetting {
@@ -570,7 +572,7 @@ extension GoProDevice: CBCentralManagerDelegate {
     }
 }
 
-extension GoProDevice: CBPeripheralDelegate {
+extension GoProDevice: @MainActor CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: (any Error)?) {
         guard error == nil else {
             fail()

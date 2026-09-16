@@ -10,13 +10,14 @@ import WatchConnectivity
 private let previewTimeout = Duration.seconds(6)
 
 private let healthKitTypes: Set<HKSampleType> = [
-    .quantityType(forIdentifier: .heartRate)!,
-    .quantityType(forIdentifier: .distanceCycling)!,
-    .quantityType(forIdentifier: .distanceWalkingRunning)!,
-    .quantityType(forIdentifier: .stepCount)!,
-    .quantityType(forIdentifier: .activeEnergyBurned)!,
-    .quantityType(forIdentifier: .runningPower)!,
-    .quantityType(forIdentifier: .cyclingPower)!,
+    heartRateType,
+    distanceCyclingType,
+    distanceWalkingRunningType,
+    stepCountType,
+    activeEnergyBurnedType,
+    runningPowerType,
+    cyclingPowerType,
+    cyclingCadenceType,
 ]
 
 struct WatchChatPostSegment: Identifiable {
@@ -82,7 +83,8 @@ struct WatchChatPost: Identifiable {
     }
 }
 
-class WatchModel: NSObject, ObservableObject, @unchecked Sendable {
+@MainActor
+class WatchModel: NSObject, ObservableObject {
     let chat = Chat()
     let preview = Preview()
     let control = Control()
@@ -117,8 +119,10 @@ class WatchModel: NSObject, ObservableObject, @unchecked Sendable {
 
     private func startPeriodicTimers() {
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true, block: { _ in
-            self.updatePreview()
-            self.keepAlive()
+            MainActor.assumeIsolated {
+                self.updatePreview()
+                self.keepAlive()
+            }
         })
     }
 
@@ -378,19 +382,23 @@ class WatchModel: NSObject, ObservableObject, @unchecked Sendable {
         let configuration = HKWorkoutConfiguration()
         var activityType: HKWorkoutActivityType
         let addStepCount: Bool
+        let addCyclingMetrics: Bool
         switch type {
         case .walking:
             activityType = .walking
             preview.workoutType = "Walking"
             addStepCount = true
+            addCyclingMetrics = false
         case .running:
             activityType = .running
             preview.workoutType = "Running"
             addStepCount = true
+            addCyclingMetrics = false
         case .cycling:
             activityType = .cycling
             preview.workoutType = "Cycling"
             addStepCount = false
+            addCyclingMetrics = true
         }
         configuration.activityType = activityType
         configuration.locationType = .outdoor
@@ -407,10 +415,11 @@ class WatchModel: NSObject, ObservableObject, @unchecked Sendable {
             workoutConfiguration: configuration
         )
         if addStepCount {
-            dataSource.enableCollection(
-                for: HKQuantityType.quantityType(forIdentifier: .stepCount)!,
-                predicate: nil
-            )
+            dataSource.enableCollection(for: stepCountType, predicate: nil)
+        }
+        if addCyclingMetrics {
+            dataSource.enableCollection(for: cyclingPowerType, predicate: nil)
+            dataSource.enableCollection(for: cyclingCadenceType, predicate: nil)
         }
         workoutBuilder.dataSource = dataSource
         workoutSession.delegate = self
@@ -526,7 +535,6 @@ class WatchModel: NSObject, ObservableObject, @unchecked Sendable {
         WCSession.default.sendMessage(message, replyHandler: nil)
     }
 
-    @MainActor
     private func handleWorkoutStateChange(session: HKWorkoutSession,
                                           toState: HKWorkoutSessionState,
                                           date: Date)
@@ -551,7 +559,6 @@ class WatchModel: NSObject, ObservableObject, @unchecked Sendable {
         }
     }
 
-    @MainActor
     private func handleWorkoutError(session: HKWorkoutSession) {
         guard session === workoutSession else {
             return
@@ -560,7 +567,6 @@ class WatchModel: NSObject, ObservableObject, @unchecked Sendable {
         finishedWorkout(session: session)
     }
 
-    @MainActor
     private func finishedWorkout(session _: HKWorkoutSession) {
         workoutSession = nil
         workoutBuilder = nil
@@ -569,13 +575,13 @@ class WatchModel: NSObject, ObservableObject, @unchecked Sendable {
 }
 
 extension WatchModel: WCSessionDelegate {
-    func session(
+    nonisolated func session(
         _: WCSession,
         activationDidCompleteWith _: WCSessionActivationState,
         error _: (any Error)?
     ) {}
 
-    func session(_: WCSession, didReceiveMessage message: [String: Any]) {
+    nonisolated func session(_: WCSession, didReceiveMessage message: [String: Any]) {
         guard let (type, value) = WatchMessageToWatch.unpack(message) else {
             return
         }
@@ -629,9 +635,9 @@ extension WatchModel: WCSessionDelegate {
         }
     }
 
-    func sessionReachabilityDidChange(_: WCSession) {}
+    nonisolated func sessionReachabilityDidChange(_: WCSession) {}
 
-    func session(
+    nonisolated func session(
         _: WCSession,
         didFinish _: WCSessionUserInfoTransfer,
         error _: (any Error)?
@@ -639,7 +645,7 @@ extension WatchModel: WCSessionDelegate {
 }
 
 extension WatchModel: HKWorkoutSessionDelegate {
-    func workoutSession(
+    nonisolated func workoutSession(
         _ session: HKWorkoutSession,
         didChangeTo toState: HKWorkoutSessionState,
         from _: HKWorkoutSessionState,
@@ -650,7 +656,7 @@ extension WatchModel: HKWorkoutSessionDelegate {
         }
     }
 
-    func workoutSession(_ session: HKWorkoutSession, didFailWithError _: any Error) {
+    nonisolated func workoutSession(_ session: HKWorkoutSession, didFailWithError _: any Error) {
         DispatchQueue.main.async {
             self.handleWorkoutError(session: session)
         }
@@ -658,10 +664,11 @@ extension WatchModel: HKWorkoutSessionDelegate {
 }
 
 extension WatchModel: HKLiveWorkoutBuilderDelegate {
-    func workoutBuilder(
+    nonisolated func workoutBuilder(
         _ workoutBuilder: HKLiveWorkoutBuilder,
         didCollectDataOf collectedTypes: Set<HKSampleType>
     ) {
+        var stats = WatchProtocolWorkoutStats()
         for type in collectedTypes {
             guard let quantityType = type as? HKQuantityType else {
                 continue
@@ -669,11 +676,15 @@ extension WatchModel: HKLiveWorkoutBuilderDelegate {
             guard let statistics = workoutBuilder.statistics(for: quantityType) else {
                 continue
             }
-            DispatchQueue.main.async {
-                self.updateWorkoutStats(stats: WatchProtocolWorkoutStats(statistics: statistics))
-            }
+            stats.update(statistics: statistics)
+        }
+        guard stats != WatchProtocolWorkoutStats() else {
+            return
+        }
+        DispatchQueue.main.async {
+            self.updateWorkoutStats(stats: stats)
         }
     }
 
-    func workoutBuilderDidCollectEvent(_: HKLiveWorkoutBuilder) {}
+    nonisolated func workoutBuilderDidCollectEvent(_: HKLiveWorkoutBuilder) {}
 }

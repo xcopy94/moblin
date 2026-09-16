@@ -1,10 +1,10 @@
 import Collections
-@preconcurrency import CoreBluetooth
+import CoreBluetooth
 import CryptoKit
 
-private let vehicleServiceUuid = CBUUID(string: "00000211-b2d1-43f0-9b88-960cebf8b91e")
-private let toVehicleUuid = CBUUID(string: "00000212-b2d1-43f0-9b88-960cebf8b91e")
-private let fromVehicleUuid = CBUUID(string: "00000213-b2d1-43f0-9b88-960cebf8b91e")
+private nonisolated(unsafe) let vehicleServiceUuid = CBUUID(string: "00000211-b2d1-43f0-9b88-960cebf8b91e")
+private nonisolated(unsafe) let toVehicleUuid = CBUUID(string: "00000212-b2d1-43f0-9b88-960cebf8b91e")
+private nonisolated(unsafe) let fromVehicleUuid = CBUUID(string: "00000213-b2d1-43f0-9b88-960cebf8b91e")
 
 enum TeslaVehicleState {
     case idle
@@ -119,12 +119,14 @@ func teslaGeneratePrivateKey() -> P256.KeyAgreement.PrivateKey {
     P256.KeyAgreement.PrivateKey()
 }
 
+@MainActor
 protocol TeslaVehicleDelegate: AnyObject {
     func teslaVehicleState(_ vehicle: TeslaVehicle, state: TeslaVehicleState)
     func teslaVehicleVehicleSecurityConnected(_ vehicle: TeslaVehicle)
     func teslaVehicleInfotainmentConnected(_ vehicle: TeslaVehicle)
 }
 
+@MainActor
 class TeslaVehicle: NSObject {
     private let vin: String
     private let peripheralId: UUID
@@ -139,8 +141,8 @@ class TeslaVehicle: NSObject {
     private var receiveBuffer = Data()
     private var vehicleDomains: [UniversalMessage_Domain: VehicleDomain] = [:]
     weak var delegate: (any TeslaVehicleDelegate)?
-    private let vehicleSecurityHandshakeTimer = SimpleTimer(queue: .main)
-    private let infotainmentHandshakeTimer = SimpleTimer(queue: .main)
+    private let vehicleSecurityHandshakeTimer = MainTimer()
+    private let infotainmentHandshakeTimer = MainTimer()
 
     init?(vin: String, privateKeyPem: String, peripheralId: UUID, handshake _: Bool = true) {
         self.vin = vin
@@ -554,7 +556,7 @@ class TeslaVehicle: NSObject {
     }
 }
 
-extension TeslaVehicle: CBCentralManagerDelegate {
+extension TeslaVehicle: @MainActor CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
         case .poweredOn:
@@ -597,7 +599,7 @@ extension TeslaVehicle: CBCentralManagerDelegate {
     }
 }
 
-extension TeslaVehicle: CBPeripheralDelegate {
+extension TeslaVehicle: @MainActor CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices _: (any Error)?) {
         guard let peripheralServices = peripheral.services else {
             logger.info("tesla-vehicle: No services found")

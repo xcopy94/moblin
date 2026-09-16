@@ -30,7 +30,7 @@ protocol MediaDelegate: AnyObject {
     func mediaOnMobcamDisconnected(_ reason: String)
     func mediaOnWhipPerform(request: URLRequest,
                             queue: DispatchQueue,
-                            completion: (@MainActor (Data?, URLResponse?, (any Error)?) -> Void)?)
+                            completion: (@Sendable (Data?, URLResponse?, (any Error)?) -> Void)?)
     func mediaOnAudioMuteChange()
     func mediaOnAudioBuffer(_ sampleBuffer: CMSampleBuffer)
     func mediaOnLowFpsImage(_ lowFpsImage: Data?, _ frameNumber: UInt64)
@@ -46,8 +46,8 @@ protocol MediaDelegate: AnyObject {
     func mediaOnFps(fps: Int)
     func mediaMoblinkStreamerDestinationAddress(address: String, port: UInt16)
     func mediaMoblinkStreamerRestartTunnel(relayId: UUID)
-    func mediaSetZoomX(x: Float)
-    func mediaSetExposureBias(bias: Float)
+    @MainActor func mediaSetZoomX(x: Float)
+    @MainActor func mediaSetExposureBias(bias: Float)
     func mediaSelectedFps(auto: Bool)
     func mediaError(error: any Error)
 }
@@ -1237,15 +1237,15 @@ extension Media: ProcessorDelegate {
 
 extension Media: SrtlaDelegate {
     func srtlaReady(port: UInt16) {
-        processorControlQueue.async {
-            if self.srtStreamOld != nil {
+        processorControlQueue.async { [self] in
+            if srtStreamOld != nil {
                 do {
-                    try self.srtStreamOld?.open(self.makeLocalhostSrtUrl(
-                        url: self.srtUrl,
+                    try srtStreamOld?.open(makeLocalhostSrtUrl(
+                        url: srtUrl,
                         port: port,
-                        latency: self.latency,
-                        overheadBandwidth: self.overheadBandwidth,
-                        maximumBandwidthFollowInput: self.maximumBandwidthFollowInput
+                        latency: latency,
+                        overheadBandwidth: overheadBandwidth,
+                        maximumBandwidthFollowInput: maximumBandwidthFollowInput
                     )) { [weak self] data in
                         guard let self else {
                             return false
@@ -1269,18 +1269,16 @@ extension Media: SrtlaDelegate {
                     }
                 }
             } else {
-                self.srtStreamNew?.open(streamId: extractSrtStreamId(url: self.srtUrl),
-                                        latency: UInt16(clamping: self.latency),
-                                        experimental: self.experimental)
+                srtStreamNew?.open(streamId: extractSrtStreamId(url: srtUrl),
+                                   latency: UInt16(clamping: latency),
+                                   experimental: experimental)
             }
         }
     }
 
     func srtlaError(message: String) {
-        DispatchQueue.main.async {
-            logger.info("stream: SRT error: \(message)")
-            self.delegate.mediaOnSrtDisconnected(String(localized: "SRT error: \(message)"))
-        }
+        logger.info("stream: SRT error: \(message)")
+        delegate.mediaOnSrtDisconnected(String(localized: "SRT error: \(message)"))
     }
 
     func srtlaReceivedPacket(packet: Data) {
@@ -1288,15 +1286,11 @@ extension Media: SrtlaDelegate {
     }
 
     func moblinkStreamerDestinationAddress(address: String, port: UInt16) {
-        DispatchQueue.main.async {
-            self.delegate.mediaMoblinkStreamerDestinationAddress(address: address, port: port)
-        }
+        delegate.mediaMoblinkStreamerDestinationAddress(address: address, port: port)
     }
 
     func moblinkStreamerRestartTunnel(relayId: UUID) {
-        DispatchQueue.main.async {
-            self.delegate.mediaMoblinkStreamerRestartTunnel(relayId: relayId)
-        }
+        delegate.mediaMoblinkStreamerRestartTunnel(relayId: relayId)
     }
 }
 
@@ -1317,9 +1311,7 @@ extension Media: RistStreamDelegate {
     }
 
     func ristStreamRelayDestinationAddress(address: String, port: UInt16) {
-        DispatchQueue.main.async {
-            self.delegate.mediaMoblinkStreamerDestinationAddress(address: address, port: port)
-        }
+        delegate.mediaMoblinkStreamerDestinationAddress(address: address, port: port)
     }
 }
 
@@ -1391,7 +1383,7 @@ extension Media: WhipStreamDelegate {
 
     func whipStreamPerform(request: URLRequest,
                            queue: DispatchQueue,
-                           completion: (@MainActor (Data?, URLResponse?, (any Error)?) -> Void)?)
+                           completion: (@Sendable (Data?, URLResponse?, (any Error)?) -> Void)?)
     {
         delegate.mediaOnWhipPerform(request: request, queue: queue, completion: completion)
     }
@@ -1491,7 +1483,7 @@ extension PreviewStreamHandler: WhipStreamDelegate {
 
     func whipStreamPerform(request: URLRequest,
                            queue: DispatchQueue,
-                           completion: (@MainActor (Data?, URLResponse?, (any Error)?) -> Void)?)
+                           completion: (@Sendable (Data?, URLResponse?, (any Error)?) -> Void)?)
     {
         media.delegate.mediaOnWhipPerform(request: request, queue: queue, completion: completion)
     }

@@ -1,6 +1,7 @@
 import Foundation
 import Network
 
+@MainActor
 protocol RemoteControlStreamerDelegate: AnyObject {
     func remoteControlStreamerConnected()
     func remoteControlStreamerDisconnected()
@@ -64,15 +65,16 @@ protocol RemoteControlStreamerDelegate: AnyObject {
 
 private let idStorage = SimpleStringStorage(key: "remoteControlStreamerId")
 
+@MainActor
 class RemoteControlStreamer {
     private var clientUrl: URL
     private var password: String
-    private weak var delegate: (any RemoteControlStreamerDelegate)?
+    private weak let delegate: (any RemoteControlStreamerDelegate)?
     private var webSocket: WebSocketClient
     var connectionErrorMessage: String = ""
     private var connected = false
     private var encryption: RemoteControlEncryption
-    private let keepAliveTimer = SimpleTimer(queue: .main)
+    private let keepAliveTimer = MainTimer()
     private var gotPong = true
     private var wrongPassword = false
 

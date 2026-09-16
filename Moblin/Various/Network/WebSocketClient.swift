@@ -5,17 +5,19 @@ import SwiftUI
 private let shortestDelayMs = 500
 private let longestDelayMs = 10000
 
+@MainActor
 protocol WebSocketClientDelegate: AnyObject {
     func webSocketClientConnected(_ webSocket: WebSocketClient)
     func webSocketClientDisconnected(_ webSocket: WebSocketClient)
     func webSocketClientReceiveMessage(_ webSocket: WebSocketClient, string: String)
 }
 
+@MainActor
 final class WebSocketClient {
     private var webSocket: NWWebSocket
-    private var connectTimer = SimpleTimer(queue: .main)
+    private var connectTimer = MainTimer()
     private var networkInterfaceTypeSelector: NetworkInterfaceTypeSelector
-    private var pingTimer = SimpleTimer(queue: .main)
+    private var pingTimer = MainTimer()
     private var pongReceived = true
     weak var delegate: (any WebSocketClientDelegate)?
     private let url: URL
@@ -120,7 +122,7 @@ final class WebSocketClient {
     }
 }
 
-extension WebSocketClient: WebSocketConnectionDelegate {
+extension WebSocketClient: @MainActor WebSocketConnectionDelegate {
     func webSocketDidConnect(connection _: any WebSocketConnection) {
         logger.debug("websocket: Connected")
         connectDelayMs = shortestDelayMs
@@ -148,7 +150,9 @@ extension WebSocketClient: WebSocketConnectionDelegate {
         delegate?.webSocketClientDisconnected(self)
     }
 
-    func webSocketDidAttemptBetterPathMigration(result _: Result<any WebSocketConnection, NWError>) {
+    func webSocketDidAttemptBetterPathMigration(
+        result _: Result<any WebSocketConnection, NWError>
+    ) {
         logger.debug("websocket: Better path migration")
     }
 

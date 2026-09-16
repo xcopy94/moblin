@@ -8,12 +8,10 @@ extension Model {
     }
 
     func importSettingsFromFile(url: URL, completion: @escaping @MainActor (Bool) -> Void) {
+        cleanupBeforeImport()
         settings.importFromFile(url: url) {
             self.importDone(message: $0)
-            let succeeded = $0 == nil
-            DispatchQueue.main.async {
-                completion(succeeded)
-            }
+            completion($0 == nil)
         }
     }
 
@@ -46,22 +44,23 @@ extension Model {
                 }
             }
         } else if let settings = UIPasteboard.general.string {
+            cleanupBeforeImport()
             self.settings.importFromClipboard(settings: settings) {
                 self.importDone(message: $0)
-                DispatchQueue.main.async {
-                    completion()
-                }
+                completion()
             }
         } else {
             importFailed(message: String(localized: "No settings found in clipboard"))
-            DispatchQueue.main.async {
-                completion()
-            }
+            completion()
         }
     }
 
     func exportToFile(completion: @escaping @MainActor (URL?) -> Void) {
         settings.exportToFile(onCompleted: completion)
+    }
+
+    private func cleanupBeforeImport() {
+        stopAllMacros()
     }
 
     private func importDone(message: String?) {

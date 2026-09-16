@@ -1,4 +1,4 @@
-@preconcurrency import AVFoundation
+import AVFoundation
 import Collections
 
 private let deltaLimit = 0.03
@@ -7,10 +7,10 @@ protocol BufferedAudioSampleBufferDelegate: AnyObject {
     func didOutputBufferedSampleBuffer(cameraId: UUID, sampleBuffer: CMSampleBuffer)
 }
 
-class BufferedAudio {
+class BufferedAudio: @unchecked Sendable {
     private var cameraId: UUID
     private let name: String
-    private weak var processor: Processor?
+    private weak let processor: Processor?
     private var sampleRate: Double = 0.0
     private var frameLength: Double = 0.0
     private var sampleBuffers: Deque<CMSampleBuffer> = []

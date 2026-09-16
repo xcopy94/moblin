@@ -3,15 +3,16 @@ import WatchConnectivity
 
 private func types() -> Set<HKSampleType> {
     var types: Set<HKSampleType> = [
-        .quantityType(forIdentifier: .heartRate)!,
-        .quantityType(forIdentifier: .distanceCycling)!,
-        .quantityType(forIdentifier: .distanceWalkingRunning)!,
-        .quantityType(forIdentifier: .stepCount)!,
-        .quantityType(forIdentifier: .activeEnergyBurned)!,
-        .quantityType(forIdentifier: .runningPower)!,
+        heartRateType,
+        distanceCyclingType,
+        distanceWalkingRunningType,
+        stepCountType,
+        activeEnergyBurnedType,
+        runningPowerType,
     ]
     if #available(iOS 17.0, *) {
-        types.insert(.quantityType(forIdentifier: .cyclingPower)!)
+        types.insert(cyclingPowerType)
+        types.insert(cyclingCadenceType)
     }
     return types
 }
@@ -24,6 +25,8 @@ private class Workout: NSObject {
     private var workoutSession: HKWorkoutSession?
     private var workoutBuilder: HKLiveWorkoutBuilder?
     private var model: Model?
+    private var latestSampleTimes: [HKQuantityType: ContinuousClock.Instant] = [:]
+    private var workoutType: WatchProtocolWorkoutType?
 
     func isActive() -> Bool {
         workoutSession != nil
@@ -37,19 +40,25 @@ private class Workout: NSObject {
         let configuration = HKWorkoutConfiguration()
         let activityType: HKWorkoutActivityType
         let addStepCount: Bool
+        let addCyclingMetrics: Bool
         switch type {
         case .walking:
             activityType = .walking
             addStepCount = true
+            addCyclingMetrics = false
         case .running:
             activityType = .running
             addStepCount = true
+            addCyclingMetrics = false
         case .cycling:
             activityType = .cycling
             addStepCount = false
+            addCyclingMetrics = true
         }
         configuration.activityType = activityType
         configuration.locationType = .outdoor
+        workoutType = type
+        latestSampleTimes.removeAll()
         workoutSession = try? HKWorkoutSession(healthStore: healthStore, configuration: configuration)
         guard let workoutSession else {
             return false
@@ -64,10 +73,11 @@ private class Workout: NSObject {
             workoutConfiguration: configuration
         )
         if addStepCount {
-            dataSource.enableCollection(
-                for: HKQuantityType.quantityType(forIdentifier: .stepCount)!,
-                predicate: nil
-            )
+            dataSource.enableCollection(for: stepCountType, predicate: nil)
+        }
+        if addCyclingMetrics {
+            dataSource.enableCollection(for: cyclingPowerType, predicate: nil)
+            dataSource.enableCollection(for: cyclingCadenceType, predicate: nil)
         }
         workoutBuilder.dataSource = dataSource
         workoutSession.delegate = self
@@ -127,7 +137,45 @@ private class Workout: NSObject {
         logger.info("workout: Finished")
         workoutSession = nil
         workoutBuilder = nil
+        workoutType = nil
         model?.setIsWorkout(type: nil)
+    }
+
+    func add(heartRate: Int) {
+        add(type: heartRateType, unit: .count().unitDivided(by: .minute()), value: Double(heartRate))
+    }
+
+    func add(cyclingPower: Int) {
+        guard workoutType == .cycling else {
+            return
+        }
+        add(type: cyclingPowerType, unit: .watt(), value: Double(cyclingPower))
+    }
+
+    func add(cyclingCadence: Int) {
+        guard workoutType == .cycling else {
+            return
+        }
+        add(type: cyclingCadenceType,
+            unit: .count().unitDivided(by: .minute()),
+            value: Double(cyclingCadence))
+    }
+
+    private func add(type: HKQuantityType, unit: HKUnit, value: Double) {
+        guard let workoutBuilder, workoutSession?.state == .running else {
+            return
+        }
+        let now = ContinuousClock.now
+        if let latest = latestSampleTimes[type], latest.duration(to: now) < .seconds(1) {
+            return
+        }
+        latestSampleTimes[type] = now
+        let date = Date.now
+        let sample = HKQuantitySample(type: type,
+                                      quantity: HKQuantity(unit: unit, doubleValue: value),
+                                      start: date,
+                                      end: date)
+        workoutBuilder.add([sample]) { _, _ in }
     }
 }
 
@@ -155,6 +203,7 @@ extension Workout: HKLiveWorkoutBuilderDelegate {
     nonisolated func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder,
                                     didCollectDataOf collectedTypes: Set<HKSampleType>)
     {
+        var stats = WatchProtocolWorkoutStats()
         for type in collectedTypes {
             guard let quantityType = type as? HKQuantityType else {
                 continue
@@ -162,9 +211,13 @@ extension Workout: HKLiveWorkoutBuilderDelegate {
             guard let statistics = workoutBuilder.statistics(for: quantityType) else {
                 continue
             }
-            DispatchQueue.main.async {
-                self.model?.handleWorkout(stats: WatchProtocolWorkoutStats(statistics: statistics))
-            }
+            stats.update(statistics: statistics)
+        }
+        guard stats != WatchProtocolWorkoutStats() else {
+            return
+        }
+        DispatchQueue.main.async {
+            self.model?.handleWorkout(stats: stats)
         }
     }
 
@@ -204,10 +257,36 @@ extension Model {
         }
     }
 
+    func addWorkoutHeartRate(_ heartRate: Int) {
+        guard #available(iOS 26, *) else {
+            return
+        }
+        Workout.shared.add(heartRate: heartRate)
+    }
+
+    func addWorkoutCyclingPower(_ power: Int) {
+        guard #available(iOS 26, *) else {
+            return
+        }
+        Workout.shared.add(cyclingPower: power)
+    }
+
+    func addWorkoutCyclingCadence(_ cadence: Int) {
+        guard #available(iOS 26, *) else {
+            return
+        }
+        Workout.shared.add(cyclingCadence: cadence)
+    }
+
     private func authorizeHealthKit(completion: @escaping @MainActor () -> Void) {
-        let typesToShare: Set = [
+        var typesToShare: Set<HKSampleType> = [
             HKQuantityType.workoutType(),
+            heartRateType,
         ]
+        if #available(iOS 17.0, *) {
+            typesToShare.insert(cyclingPowerType)
+            typesToShare.insert(cyclingCadenceType)
+        }
         healthStore.requestAuthorization(toShare: typesToShare, read: types()) { _, _ in
             DispatchQueue.main.async {
                 completion()

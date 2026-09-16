@@ -3,7 +3,7 @@ import Foundation
 
 private let dispatchQueue = DispatchQueue(label: "com.eerimoq.workout-device")
 
-nonisolated(unsafe) let workoutDeviceScanner = BluetoothScanner(serviceIds: [
+@MainActor let workoutDeviceScanner = BluetoothScanner(serviceIds: [
     workoutDeviceHeartRateServiceId,
     workoutDeviceCyclingPowerServiceId,
     workoutDeviceCyclingSpeedCadenceServiceId,
@@ -13,7 +13,7 @@ nonisolated(unsafe) let workoutDeviceScanner = BluetoothScanner(serviceIds: [
 protocol WorkoutDeviceDelegate: AnyObject {
     func workoutDeviceState(_ device: WorkoutDevice, state: WorkoutDeviceState)
     func workoutDeviceHeartRate(_ device: WorkoutDevice, heartRate: Int)
-    func workoutDeviceCyclingPower(_ device: WorkoutDevice, power: Int, cadence: Int)
+    func workoutDeviceCyclingPower(_ device: WorkoutDevice, power: Int, cadence: Int?)
     func workoutDeviceCyclingSpeedCadence(_ device: WorkoutDevice, speed: Double?, cadence: Int?)
     func workoutDeviceRunningMetrics(_ device: WorkoutDevice, metrics: WorkoutDeviceRunningMetrics)
 }
@@ -83,8 +83,15 @@ class WorkoutDevice: NSObject, @unchecked Sendable {
         setState(state: .disconnected)
     }
 
+    private func resetMeasurements() {
+        cyclingPower.resetMeasurements()
+        cyclingSpeedCadence.resetMeasurements()
+        running.resetMeasurements()
+    }
+
     private func reconnect() {
         peripheral = nil
+        resetMeasurements()
         setState(state: .discovering)
         centralManager = CBCentralManager(delegate: self, queue: dispatchQueue)
     }

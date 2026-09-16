@@ -9,7 +9,6 @@ import GameController
 import HealthKit
 import MediaPlayer
 import PhotosUI
-import SDWebImageSwiftUI
 import SDWebImageWebPCoder
 import StoreKit
 import SwiftUI
@@ -102,24 +101,28 @@ struct LogEntry: Identifiable {
     var message: String
 }
 
+@MainActor
 class DebugOverlayProvider: ObservableObject {
     @Published var debugLines: [String] = []
 }
 
+@MainActor
 class StreamUptimeProvider: ObservableObject {
     @Published var uptime = noValue
 }
 
+@MainActor
 class ProgressBar: ObservableObject {
     @Published var progress: Float = 0
     @Published var goal: Float = 1
 }
 
+@MainActor
 class HypeTrain: ObservableObject {
     @Published var status = noValue
     @Published var level: Int?
     @Published var progress: ProgressBar?
-    var timer = SimpleTimer(queue: .main)
+    var timer = MainTimer()
 }
 
 enum RaidState {
@@ -129,13 +132,14 @@ enum RaidState {
     case completed
 }
 
+@MainActor
 class Raid: ObservableObject {
     @Published var state: RaidState = .idle
     @Published var channelImage: String = ""
     @Published var channelLogin: String = ""
     @Published var message: String = ""
     @Published var progress = ProgressBar()
-    var timer = SimpleTimer(queue: .main)
+    var timer = MainTimer()
 }
 
 enum TwitchPollState {
@@ -150,6 +154,7 @@ struct TwitchPollChoice: Identifiable {
     let votes: Int
 }
 
+@MainActor
 class TwitchPoll: ObservableObject {
     @Published var state: TwitchPollState = .idle
     @Published var title = ""
@@ -157,7 +162,7 @@ class TwitchPoll: ObservableObject {
     @Published var totalVotes = 0
     @Published var message = ""
     var endsAt: Date?
-    var timer = SimpleTimer(queue: .main)
+    var timer = MainTimer()
 }
 
 enum TwitchPredictionState {
@@ -176,6 +181,7 @@ struct TwitchPredictionOutcome: Identifiable {
     let winner: Bool
 }
 
+@MainActor
 class TwitchPrediction: ObservableObject {
     @Published var state: TwitchPredictionState = .idle
     @Published var title = ""
@@ -183,9 +189,10 @@ class TwitchPrediction: ObservableObject {
     @Published var totalChannelPoints = 0
     @Published var message = ""
     var locksAt: Date?
-    var timer = SimpleTimer(queue: .main)
+    var timer = MainTimer()
 }
 
+@MainActor
 class Ingests: ObservableObject {
     var rtmp: RtmpServer?
     var srtla: SrtlaServer?
@@ -197,6 +204,7 @@ class Ingests: ObservableObject {
     @Published var speedAndTotal = noValue
 }
 
+@MainActor
 class Bitrate: ObservableObject {
     @Published var speedAndTotal = noValue
     @Published var speedMbpsOneDecimal = noValue
@@ -204,6 +212,7 @@ class Bitrate: ObservableObject {
     @Published var statusIconColor: Color?
 }
 
+@MainActor
 class Bonding: ObservableObject {
     @Published var statistics = noValue
     @Published var rtts = noValue
@@ -211,16 +220,19 @@ class Bonding: ObservableObject {
     var statisticsFormatter = BondingStatisticsFormatter()
 }
 
+@MainActor
 class Show: ObservableObject {
     @Published var cameraPreview = false
     @Published var chatPhone = false
 }
 
+@MainActor
 class Battery: ObservableObject {
     @Published var level = 0.0
     @Published var state: UIDevice.BatteryState = .full
 }
 
+@MainActor
 class StatusOther: ObservableObject {
     @Published var ipStatuses: [IPMonitor.Status] = []
     @Published var thermalState = ProcessInfo.processInfo.thermalState
@@ -247,6 +259,7 @@ struct ChatPlatformStatus: Equatable {
     let connected: Bool
 }
 
+@MainActor
 class StatusTopLeft: ObservableObject {
     @Published var numberOfViewersIconColor: Color = .white
     @Published var numberOfViewersCompact = noValue
@@ -259,6 +272,7 @@ class StatusTopLeft: ObservableObject {
     @Published var statusObsText = noValue
 }
 
+@MainActor
 class SystemMonitor: ObservableObject {
     @Published var appCpu = 0
     @Published var cpu = 0
@@ -273,6 +287,7 @@ class SystemMonitor: ObservableObject {
     }
 }
 
+@MainActor
 class StatusTopRight: ObservableObject {
     @Published var browserWidgetsStatusChanged = false
     @Published var remoteControlOk = false
@@ -306,12 +321,14 @@ class Toast: ObservableObject {
     var onTapped: (() -> Void)?
 }
 
+@MainActor
 class SceneSelector: ObservableObject {
     @Published var trigger = 0
     @Published var sceneIndex = 0
     var selectedSceneId = UUID()
 }
 
+@MainActor
 class StreamOverlay: ObservableObject {
     @Published var showMediaPlayerControls = false
     @Published var isFrontCameraSelected = false
@@ -325,6 +342,7 @@ class StreamOverlay: ObservableObject {
     @Published var isTorchOn = false
 }
 
+@MainActor
 class Store: ObservableObject {
     @Published var myIcons: [Icon] = []
     @Published var iconsInStore: [Icon] = []
@@ -332,23 +350,27 @@ class Store: ObservableObject {
     var hasBoughtSomething: Bool = true
 }
 
+@MainActor
 class DrawOnStream: ObservableObject {
     @Published var lines: [DrawOnStreamLine] = []
     @Published var selectedColor: Color = .pink
     @Published var selectedWidth: CGFloat = 4
 }
 
+@MainActor
 class StealthMode: ObservableObject {
-    var hideButtonsTimer = SimpleTimer(queue: .main)
+    var hideButtonsTimer = MainTimer()
     @Published var showButtons = true
     @Published var image: UIImage?
 }
 
+@MainActor
 class ControlBar: ObservableObject {
     @Published var backgroundImage: UIImage?
     @Published var backgroundImageOpacity: Double = 1.0
 }
 
+@MainActor
 class QuickButtonChat: ObservableObject {
     @Published var showAllChatMessages = true
     @Published var showFirstTimeChatterMessage = true
@@ -358,16 +380,19 @@ class QuickButtonChat: ObservableObject {
     @Published var chatAlertsPaused = false
 }
 
+@MainActor
 class ExternalDisplay: ObservableObject {
     @Published var chatEnabled = false
 }
 
+@MainActor
 class GoProState: ObservableObject {
     @Published var launchLiveStreamSelection: UUID?
     @Published var wifiCredentialsSelection: UUID?
     @Published var rtmpUrlSelection: UUID?
 }
 
+@MainActor
 class QuickButtons: ObservableObject {
     @Published var pairs: [[QuickButtonPair]] = Array(repeating: [], count: controlBarPages)
     @Published var selectedButtonType: SettingsQuickButtonType?
@@ -375,15 +400,18 @@ class QuickButtons: ObservableObject {
     @Published var activePage: Int? = 1
 }
 
+@MainActor
 class Snapshot: ObservableObject {
     @Published var countdown = 0
     @Published var currentJob: SnapshotJob?
 }
 
+@MainActor
 class Orientation: ObservableObject {
     @Published var isPortrait: Bool = false
 }
 
+@MainActor
 class CameraLevel: ObservableObject {
     private var motion = CMMotionManager()
     @Published var angle: Double?
@@ -412,7 +440,7 @@ class CameraLevel: ObservableObject {
 private let enterForegroundCountStorage = SimpleIntStorage(key: "enterForegroundCount")
 
 @MainActor
-final class Model: NSObject, ObservableObject, @unchecked Sendable {
+final class Model: NSObject, ObservableObject {
     var enterForegroundCount: Int {
         get {
             enterForegroundCountStorage.get()
@@ -474,7 +502,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     var activeBufferedVideoIds: Set<UUID> = []
     var wiFiAwareSenderTask: Task<Void, any Error>?
     var wiFiAwareReceiverTask: Task<Void, any Error>?
-    nonisolated(unsafe) let youTube = YouTube()
+    let youTube = YouTube()
     let webBrowserState = WebBrowserState()
     let cameraLevel = CameraLevel()
     let orientation = Orientation()
@@ -508,7 +536,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     let zoom = Zoom()
     let camera = CameraState()
     let mediaPlayerPlayer = MediaPlayerPlayer()
-    var media: Media!
+    nonisolated(unsafe) var media: Media!
     let hypeTrain = HypeTrain()
     let raid = Raid()
     let twitchPoll = TwitchPoll()
@@ -608,7 +636,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     let alertMediaStorage = AlertMediaStorage()
     let vTuberStorage = VTuberStorage()
     let pngTuberStorage = PngTuberStorage()
-    let reconnectTimer = SimpleTimer(queue: .main)
+    let reconnectTimer = MainTimer()
     var logId = 1
     private var serversSpeed: Int64 = 0
     var adsEndDate: Date?
@@ -635,10 +663,10 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     var twitchAuthOnComplete: ((_ accessToken: String) -> Void)?
     var kickAuthOnComplete: ((_ accessToken: String) -> Void)?
     var twitchPlatformStatus: PlatformStatus = .unknown
-    let twitchSearchCategoriesTimer = SimpleTimer(queue: .main)
-    let twitchSearchChannelsTimer = SimpleTimer(queue: .main)
-    let kickSearchCategoriesTimer = SimpleTimer(queue: .main)
-    let kickSearchChannelsTimer = SimpleTimer(queue: .main)
+    let twitchSearchCategoriesTimer = MainTimer()
+    let twitchSearchChannelsTimer = MainTimer()
+    let kickSearchCategoriesTimer = MainTimer()
+    let kickSearchChannelsTimer = MainTimer()
     var drawOnStreamSize: CGSize = .zero
     var webBrowser: WKWebView?
     let webBrowserController = WebBrowserController()
@@ -671,17 +699,18 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     var catPrinters: [UUID: CatPrinter] = [:]
     var cyclingPower = 0
     var cyclingCadence = 0
-    var latestCyclingSpeedCadenceCadenceTime: ContinuousClock.Instant?
+    var latestCyclingPower: CyclingSampleInfo?
+    var latestCyclingCadence: CyclingSampleInfo?
     var cyclingSpeed = 0.0
     var latestSubscriber = ""
     var latestFollower = ""
-    private let periodicTimer20ms = SimpleTimer(queue: .main)
-    private let periodicTimer200ms = SimpleTimer(queue: .main)
-    private let periodicTimer1s = SimpleTimer(queue: .main)
-    private let periodicTimer3s = SimpleTimer(queue: .main)
-    private let periodicTimer5s = SimpleTimer(queue: .main)
-    private let periodicTimer10s = SimpleTimer(queue: .main)
-    private let periodicTimerBatteryLevel = SimpleTimer(queue: .main)
+    private let periodicTimer20ms = MainTimer()
+    private let periodicTimer200ms = MainTimer()
+    private let periodicTimer1s = MainTimer()
+    private let periodicTimer3s = MainTimer()
+    private let periodicTimer5s = MainTimer()
+    private let periodicTimer10s = MainTimer()
+    private let periodicTimerBatteryLevel = MainTimer()
     var currentWorkoutDeviceSettings: SettingsWorkoutDevice?
     var workoutDevices: [UUID: WorkoutDevice] = [:]
     var blackSharkCoolerDevices: [UUID: BlackSharkCoolerDevice] = [:]
@@ -705,7 +734,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     var gameControllers: [GCController?] = []
     var moveToGimbalPresetQueue: Deque<UUID> = []
     var moveToGimbalPresetQueueRunning = false
-    var gimbalPresetLongPressTimers: [String: SimpleTimer] = [:]
+    var gimbalPresetLongPressTimers: [String: MainTimer] = [:]
     var latestKnownLocation: CLLocation?
     var slopePercent = 0.0
     var previousSlopeAltitude: Double? = 0.0
@@ -772,7 +801,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
     var httpProxyServer: HttpProxyServer?
     var httpProxyPort: Network.NWEndpoint.Port?
     let streamDeck = StreamDeck()
-    let photoShootTimer = SimpleTimer(queue: .main)
+    let photoShootTimer = MainTimer()
 
     weak var processor: Processor? {
         didSet {
@@ -956,10 +985,10 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
         }
     }
 
-    func makeErrorToastMain(title: String,
-                            font: Font? = nil,
-                            subTitle: String? = nil,
-                            vibrate: Bool = false)
+    nonisolated func makeErrorToastMain(title: String,
+                                        font: Font? = nil,
+                                        subTitle: String? = nil,
+                                        vibrate: Bool = false)
     {
         DispatchQueue.main.async {
             self.makeErrorToast(title: title, font: font, subTitle: subTitle, vibrate: vibrate)
@@ -1110,9 +1139,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
             appStoreUpdateListenerTask = listenForAppStoreTransactions()
             await getProductsFromAppStore()
             await updateProductFromAppStore()
-            DispatchQueue.main.async {
-                self.updateIconImageFromDatabase()
-            }
+            updateIconImageFromDatabase()
         }
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(systemVolumeDidChange),
@@ -1901,9 +1928,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
 
     private func updateCurrentSsid() {
         fetchCurrentWiFiSsid { ssid in
-            DispatchQueue.main.async {
-                self.currentWiFiSsid = ssid
-            }
+            self.currentWiFiSsid = ssid
         }
     }
 
@@ -2127,9 +2152,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
 
     func playAlert(alert: AlertsEffectAlert) {
         for alertsEffect in enabledAlertsEffects {
-            DispatchQueue.main.async {
-                alertsEffect.play(alert: alert)
-            }
+            alertsEffect.play(alert: alert)
         }
     }
 
@@ -3344,9 +3367,7 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
             return
         }
         setQuickButton(type: type, isOn: true)
-        DispatchQueue.main.async {
-            effect?.play(alert: .quickButton)
-        }
+        effect?.play(alert: .quickButton)
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
             self.setQuickButton(type: type, isOn: false)
         }
@@ -3367,6 +3388,12 @@ final class Model: NSObject, ObservableObject, @unchecked Sendable {
         }
         if let power = stats.power {
             workoutPower = power
+        }
+        if let cyclingPower = stats.cyclingPower {
+            setCyclingPower(cyclingPower, source: .watch)
+        }
+        if let cyclingCadence = stats.cyclingCadence {
+            setCyclingCadence(cyclingCadence, source: .watch)
         }
     }
 }
@@ -3422,9 +3449,9 @@ extension Model {
     }
 }
 
-extension Model: @preconcurrency AlertsEffectDelegate {
-    func alertsMakeErrorToast(title: String) {
-        makeErrorToast(title: title)
+extension Model: AlertsEffectDelegate {
+    nonisolated func alertsMakeErrorToast(title: String) {
+        makeErrorToastMain(title: title)
     }
 }
 
@@ -3439,7 +3466,7 @@ extension Model: UIDocumentPickerDelegate {
     }
 }
 
-extension Model: @preconcurrency FaxReceiverDelegate {
+extension Model: FaxReceiverDelegate {
     func faxReceiverPrint(image: CIImage) {
         printAllCatPrinters(image: image)
     }

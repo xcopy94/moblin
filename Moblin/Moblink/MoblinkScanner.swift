@@ -17,14 +17,16 @@ private class DiscoveredSerivce {
     }
 }
 
+@MainActor
 protocol MoblinkScannerDelegate: AnyObject {
     func moblinkScannerDiscoveredStreamers(streamers: [MoblinkScannerStreamer])
 }
 
+@MainActor
 class MoblinkScanner: NSObject {
     private var browser: NetServiceBrowser?
     private var services: [DiscoveredSerivce] = []
-    private weak var delegate: (any MoblinkScannerDelegate)?
+    private weak let delegate: (any MoblinkScannerDelegate)?
 
     init(delegate: any MoblinkScannerDelegate) {
         self.delegate = delegate
@@ -61,7 +63,7 @@ class MoblinkScanner: NSObject {
     }
 }
 
-extension MoblinkScanner: NetServiceBrowserDelegate {
+extension MoblinkScanner: @MainActor NetServiceBrowserDelegate {
     func netServiceBrowser(_: NetServiceBrowser, didFind service: NetService, moreComing _: Bool) {
         guard !services.contains(where: { $0.service == service }) else {
             return
@@ -74,7 +76,7 @@ extension MoblinkScanner: NetServiceBrowserDelegate {
     func netServiceBrowser(_: NetServiceBrowser, didRemove _: NetService, moreComing _: Bool) {}
 }
 
-extension MoblinkScanner: NetServiceDelegate {
+extension MoblinkScanner: @MainActor NetServiceDelegate {
     func netServiceDidResolveAddress(_ service: NetService) {
         guard let discoveredService = services.first(where: { $0.service == service }) else {
             return

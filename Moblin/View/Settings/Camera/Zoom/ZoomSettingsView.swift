@@ -112,6 +112,21 @@ struct ZoomSettingsView: View {
             } footer: {
                 Text("The zoom (in X) to set when switching to given camera, if enabled.")
             }
+            Section {
+                RgbColorPickerView(title: "Background", color: $zoom.backgroundColorColor, opacity: true) {
+                    zoom.backgroundColor = $0
+                    model.zoom.objectWillChange.send()
+                }
+                TextButtonView("Reset") {
+                    zoom.backgroundColor = defaultSegmentedPickerSelectedColor
+                    zoom.backgroundColorColor = zoom.backgroundColor.color()
+                    model.zoom.objectWillChange.send()
+                }
+            } header: {
+                Text("Color")
+            } footer: {
+                Text("Background color of the zoom preset button when selected.")
+            }
         }
         .navigationTitle("Zoom")
     }

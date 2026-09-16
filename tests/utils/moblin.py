@@ -257,8 +257,9 @@ class Moblin:
         display_name: str = "Tester",
         segments: list[dict] | None = None,
         highlight: dict | None = None,
+        platform: str = "twitch",
     ):
-        message = self._create_chat_message(text, is_moderator, display_name, segments)
+        message = self._create_chat_message(text, is_moderator, display_name, segments, platform)
         if highlight is not None:
             message["highlight"] = highlight
         self._request({"chatMessages": {"history": False, "messages": [message]}})
@@ -296,6 +297,30 @@ class Moblin:
 
     def get_state(self) -> dict:
         return self._events.state()
+
+    def get_scene(self) -> str:
+        return self.get_state()["scene"].upper()
+
+    def wait_for_scene(self, scene_id: str):
+        wait_until(lambda: self.get_scene() == scene_id.upper(), f"scene {scene_id} to be selected")
+
+    def start_macro(self, macro_id: str):
+        self._request({"startMacro": {"id": macro_id}})
+
+    def stop_macro(self, macro_id: str):
+        self._request({"stopMacro": {"id": macro_id}})
+
+    def is_macro_running(self, macro_id: str) -> bool:
+        for macro in self.get_state().get("macros") or []:
+            if macro["id"].upper() == macro_id.upper():
+                return macro["running"]
+        return False
+
+    def wait_for_macro_running(self, macro_id: str, running: bool):
+        wait_until(
+            lambda: self.is_macro_running(macro_id) == running,
+            f"macro to be {'running' if running else 'stopped'}",
+        )
 
     def go_live(self):
         self._request({"setLive": {"on": True}})
@@ -508,11 +533,12 @@ class Moblin:
         is_moderator: bool,
         display_name: str,
         segments: list[dict] | None,
+        platform: str,
     ):
         self._chat_message_id = max(self._chat_message_id + 1, int(time.time() * 1000))
         return {
             "id": self._chat_message_id,
-            "platform": {"twitch": {}},
+            "platform": {platform: {}},
             "displayName": display_name,
             "user": display_name.lower(),
             "userBadges": [],

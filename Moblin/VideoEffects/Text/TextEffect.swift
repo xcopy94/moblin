@@ -3,6 +3,7 @@ import Combine
 import MetalPetal
 import SwiftUI
 
+@MainActor
 private class TextViewState: ObservableObject {
     @Published var fontSize: CGFloat
     @Published var fontFamily: String?
@@ -180,15 +181,15 @@ final class TextEffect: VideoEffect, @unchecked Sendable {
                               lines: [])
         self.delay = delay
         super.init()
-        DispatchQueue.main.async {
-            self.renderer = ImageRenderer(content: TextView(state: self.state))
-            self.cancellable = self.renderer?.objectWillChange.sink { [weak self] in
+        DispatchQueue.main.async { [self] in
+            renderer = ImageRenderer(content: TextView(state: state))
+            cancellable = renderer?.objectWillChange.sink { [weak self] in
                 guard let self else {
                     return
                 }
                 setOverlay(image: renderer?.cgImage)
             }
-            self.setOverlay(image: self.renderer?.cgImage)
+            setOverlay(image: renderer?.cgImage)
         }
     }
 
@@ -213,38 +214,47 @@ final class TextEffect: VideoEffect, @unchecked Sendable {
         forceOverlayUpdate()
     }
 
+    @MainActor
     func setBackgroundColor(color: RgbColor) {
         state.backgroundColor = color.color()
     }
 
+    @MainActor
     func setForegroundColor(color: RgbColor) {
         state.foregroundColor = color.color()
     }
 
+    @MainActor
     func setFontSize(size: CGFloat) {
         state.fontSize = size
     }
 
+    @MainActor
     func setFontFamily(family: String?) {
         state.fontFamily = family
     }
 
+    @MainActor
     func setFontStyle(style: String) {
         state.fontStyle = style
     }
 
+    @MainActor
     func setFontDesign(design: Font.Design) {
         state.fontDesign = design
     }
 
+    @MainActor
     func setFontWeight(weight: Font.Weight) {
         state.fontWeight = weight
     }
 
+    @MainActor
     func setFontMonospacedDigits(enabled: Bool) {
         state.fontMonospacedDigits = enabled
     }
 
+    @MainActor
     func setLayout(alignment: HorizontalAlignment, width: Int?, cornerRadius: Double) {
         state.horizontalAlignment = alignment
         state.minWidth = Double(width ?? 0)

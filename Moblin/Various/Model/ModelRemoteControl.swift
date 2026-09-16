@@ -3,6 +3,7 @@ import CoreLocation
 import Foundation
 import SwiftUI
 
+@MainActor
 class RemoteControl: ObservableObject {
     @Published var general: RemoteControlStatusGeneral?
     @Published var topLeft: RemoteControlStatusTopLeft?
@@ -214,25 +215,19 @@ extension Model {
 
     func remoteControlAssistantSetLive(on: Bool) {
         remoteControlAssistant?.setLive(on: on) {
-            DispatchQueue.main.async {
-                self.updateRemoteControlAssistantStatus()
-            }
+            self.updateRemoteControlAssistantStatus()
         }
     }
 
     func remoteControlAssistantSetRecord(on: Bool) {
         remoteControlAssistant?.setRecord(on: on) {
-            DispatchQueue.main.async {
-                self.updateRemoteControlAssistantStatus()
-            }
+            self.updateRemoteControlAssistantStatus()
         }
     }
 
     func remoteControlAssistantSetMute(on: Bool) {
         remoteControlAssistant?.setMute(on: on) {
-            DispatchQueue.main.async {
-                self.updateRemoteControlAssistantStatus()
-            }
+            self.updateRemoteControlAssistantStatus()
         }
     }
 
@@ -242,33 +237,25 @@ extension Model {
 
     func remoteControlAssistantSetPreviewStream(on: Bool) {
         remoteControlAssistant?.setPreviewStream(on: on) {
-            DispatchQueue.main.async {
-                self.updateRemoteControlAssistantStatus()
-            }
+            self.updateRemoteControlAssistantStatus()
         }
     }
 
     func remoteControlAssistantSetScene(id: UUID) {
         remoteControlAssistant?.setScene(id: id) {
-            DispatchQueue.main.async {
-                self.updateRemoteControlAssistantStatus()
-            }
+            self.updateRemoteControlAssistantStatus()
         }
     }
 
     func remoteControlAssistantSetAutoSceneSwitcher(id: UUID?) {
         remoteControlAssistant?.setAutoSceneSwitcher(id: id) {
-            DispatchQueue.main.async {
-                self.updateRemoteControlAssistantStatus()
-            }
+            self.updateRemoteControlAssistantStatus()
         }
     }
 
     func remoteControlAssistantSetMic(id: String) {
         remoteControlAssistant?.setMic(id: id) {
-            DispatchQueue.main.async {
-                self.updateRemoteControlAssistantStatus()
-            }
+            self.updateRemoteControlAssistantStatus()
         }
     }
 
@@ -282,9 +269,7 @@ extension Model {
 
     func remoteControlAssistantSetBitratePreset(id: UUID) {
         remoteControlAssistant?.setBitratePreset(id: id) {
-            DispatchQueue.main.async {
-                self.updateRemoteControlAssistantStatus()
-            }
+            self.updateRemoteControlAssistantStatus()
         }
     }
 
@@ -294,9 +279,7 @@ extension Model {
 
     func remoteControlAssistantReloadBrowserWidgets() {
         remoteControlAssistant?.reloadBrowserWidgets {
-            DispatchQueue.main.async {
-                self.makeToast(title: String(localized: "Browser widgets reloaded"))
-            }
+            self.makeToast(title: String(localized: "Browser widgets reloaded"))
         }
     }
 
@@ -741,7 +724,7 @@ extension Model {
     }
 }
 
-extension Model: @preconcurrency RemoteControlStreamerDelegate {
+extension Model: RemoteControlStreamerDelegate {
     func remoteControlStreamerConnected() {
         useRemoteControlForChatAndEvents = database.remoteControl.streamer.reliableChatAndEvents
         let subTitle: String?
@@ -1138,7 +1121,7 @@ extension Model: @preconcurrency RemoteControlStreamerDelegate {
     }
 }
 
-extension Model: @preconcurrency RemoteControlAssistantDelegate {
+extension Model: RemoteControlAssistantDelegate {
     func remoteControlAssistantConnected() {
         makeToast(title: String(localized: "Remote control streamer connected"))
         remoteControlAssistantStreamerState.filters = [:]
@@ -1292,7 +1275,7 @@ extension Model: @preconcurrency RemoteControlAssistantDelegate {
     func remoteControlAssistantStats(data _: RemoteControlStats) {}
 }
 
-extension Model: @preconcurrency RemoteControlWebDelegate {
+extension Model: RemoteControlWebDelegate {
     func remoteControlWebDisconnected() {
         setGimbalMovement(x: 0, y: 0)
     }

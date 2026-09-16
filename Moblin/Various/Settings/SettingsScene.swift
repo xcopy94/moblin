@@ -2282,7 +2282,7 @@ class SettingsWidgetPomodoroTimer: Codable, ObservableObject {
     @Published var focusToBreakChatMessage: String = ""
     @Published var breakToFocusChatMessage: String = ""
     var onPhaseChanged: ((PomodoroPhase) -> Void)?
-    private var timer = SimpleTimer(queue: .main)
+    private var timer = MainTimer()
 
     enum CodingKeys: CodingKey {
         case focusDuration
@@ -2344,9 +2344,10 @@ class SettingsWidgetPomodoroTimer: Codable, ObservableObject {
         breakToFocusSoundId = container.decode(.breakToFocusSoundId, UUID?.self, nil)
         focusToBreakChatMessage = container.decode(.focusToBreakChatMessage, String.self, "")
         breakToFocusChatMessage = container.decode(.breakToFocusChatMessage, String.self, "")
-        reset()
+        secondsRemaining = focusDuration * 60
     }
 
+    @MainActor
     func start() {
         guard !isRunning else {
             return
@@ -2357,11 +2358,13 @@ class SettingsWidgetPomodoroTimer: Codable, ObservableObject {
         }
     }
 
+    @MainActor
     func pause() {
         isRunning = false
         timer.stop()
     }
 
+    @MainActor
     func reset() {
         pause()
         phase = .focus
@@ -3271,7 +3274,7 @@ class SettingsWidgetGolfScoreboardPlayer: Codable, Identifiable, ObservableObjec
     }
 
     func holesPlayed(numHoles: Int) -> Int {
-        scores.prefix(numHoles).filter { $0 != -1 }.count
+        scores.prefix(numHoles).count(where: { $0 != -1 })
     }
 }
 
@@ -3902,6 +3905,8 @@ class SettingsScene: Codable, Identifiable, Equatable, ObservableObject, Named {
     @Published var micId: String = ""
     @Published var quickSwitchGroup: Int?
     @Published var mirror: Bool = false
+    var backgroundColor: RgbColor = defaultSegmentedPickerSelectedColor
+    @Published var backgroundColorColor: Color = defaultSegmentedPickerSelectedColor.color()
 
     init(name: String) {
         self.name = name
@@ -3938,6 +3943,7 @@ class SettingsScene: Codable, Identifiable, Equatable, ObservableObject, Named {
         case micId
         case quickSwitchGroup
         case mirror
+        case backgroundColor
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -3967,6 +3973,7 @@ class SettingsScene: Codable, Identifiable, Equatable, ObservableObject, Named {
         try container.encode(.micId, micId)
         try container.encode(.quickSwitchGroup, quickSwitchGroup)
         try container.encode(.mirror, mirror)
+        try container.encode(.backgroundColor, backgroundColor)
     }
 
     required init(from decoder: any Decoder) throws {
@@ -4004,6 +4011,12 @@ class SettingsScene: Codable, Identifiable, Equatable, ObservableObject, Named {
         micId = container.decode(.micId, String.self, "")
         quickSwitchGroup = container.decode(.quickSwitchGroup, Int?.self, nil)
         mirror = container.decode(.mirror, Bool.self, false)
+        backgroundColor = container.decode(
+            .backgroundColor,
+            RgbColor.self,
+            defaultSegmentedPickerSelectedColor
+        )
+        backgroundColorColor = backgroundColor.color()
     }
 
     func clone() -> SettingsScene {
@@ -4021,6 +4034,8 @@ class SettingsScene: Codable, Identifiable, Equatable, ObservableObject, Named {
         new.micId = micId
         new.quickSwitchGroup = quickSwitchGroup
         new.mirror = mirror
+        new.backgroundColor = backgroundColor
+        new.backgroundColorColor = backgroundColorColor
         return new
     }
 

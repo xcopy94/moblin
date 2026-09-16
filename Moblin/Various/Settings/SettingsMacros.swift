@@ -315,8 +315,9 @@ class SettingsMacrosMacro: Identifiable, Codable, ObservableObject, Named {
     @Published var closePanelOnRun: Bool = false
     var nextActionIndex: Int = 0
     var repeatCurrentCount: Int = 0
-    let delayTimer = SimpleTimer(queue: .main)
-    let finishedTimer = SimpleTimer(queue: .main)
+    var delayed: Bool = false
+    let delayTimer = MainTimer()
+    let finishedTimer = MainTimer()
     var stack: [SettingsMacrosMacro] = []
 
     init() {}

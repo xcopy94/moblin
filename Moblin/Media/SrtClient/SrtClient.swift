@@ -20,7 +20,7 @@ private let reconnectDelay = 5.0
 class SrtClient: @unchecked Sendable {
     private let cameraId: UUID
     private let url: URL
-    private weak var delegate: (any SrtClientDelegate)?
+    private weak let delegate: (any SrtClientDelegate)?
     private var running = false
     private var socket: SRTSOCKET = SRT_INVALID_SOCK
     private var bitrateStats: Atomic<BitrateStats> = .init(.init())
@@ -61,11 +61,7 @@ class SrtClient: @unchecked Sendable {
     }
 
     func updateStats() -> BitrateStatsInstant {
-        nonisolated(unsafe) var stats: BitrateStatsInstant?
-        bitrateStats.mutate {
-            stats = $0.update()
-        }
-        return stats!
+        bitrateStats.mutate { $0.update() }
     }
 
     private func connectSoon(delay: Double) {

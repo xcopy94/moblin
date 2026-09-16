@@ -497,6 +497,7 @@ struct ObsRecordStatus {
     let active: Bool
 }
 
+@MainActor
 protocol ObsWebsocketDelegate: AnyObject {
     func obsWebsocketConnected()
     func obsWebsocketSceneChanged(sceneName: String)
@@ -506,6 +507,7 @@ protocol ObsWebsocketDelegate: AnyObject {
     func obsWebsocketAudioVolume(volumes: [ObsAudioInputVolume])
 }
 
+@MainActor
 class ObsWebSocket {
     private let url: URL
     private let password: String
@@ -515,7 +517,7 @@ class ObsWebSocket {
     private var batchRequests: [String: BatchRequest] = [:]
     var connectionErrorMessage: String = ""
     private var connected = false
-    weak var delegate: (any ObsWebsocketDelegate)?
+    weak let delegate: (any ObsWebsocketDelegate)?
 
     init(url: URL, password: String, delegate: any ObsWebsocketDelegate) {
         self.url = url

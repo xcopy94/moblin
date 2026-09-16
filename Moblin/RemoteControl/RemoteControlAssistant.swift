@@ -3,6 +3,7 @@ import CryptoKit
 import Foundation
 import Network
 
+@MainActor
 protocol RemoteControlAssistantDelegate: AnyObject {
     func remoteControlAssistantConnected()
     func remoteControlAssistantDisconnected()
@@ -20,7 +21,8 @@ private struct RemoteControlRequestResponse {
     let onError: (String) -> Void
 }
 
-class RemoteControlAssistant: NSObject, @unchecked Sendable {
+@MainActor
+class RemoteControlAssistant: NSObject {
     private let port: UInt16
     private let password: String
     private var connected: Bool = false
@@ -29,8 +31,8 @@ class RemoteControlAssistant: NSObject, @unchecked Sendable {
     private var server: NWListener?
     var connectionErrorMessage = ""
     private var streamerWebSocket: NWConnection?
-    private var retryStartTimer = SimpleTimer(queue: .main)
-    private weak var delegate: (any RemoteControlAssistantDelegate)?
+    private var retryStartTimer = MainTimer()
+    private weak let delegate: (any RemoteControlAssistantDelegate)?
     private var streamerIdentified = false
     private var challenge = ""
     private var salt = ""
@@ -44,9 +46,9 @@ class RemoteControlAssistant: NSObject, @unchecked Sendable {
     private var twitchEventSubNotiticationWaitForResponse = false
     private var chatMessageHistory: Deque<RemoteControlChatMessage> = []
     private var nextChatMessageId = 0
-    private let keepAliveTimer = SimpleTimer(queue: .main)
+    private let keepAliveTimer = MainTimer()
     private var gotPing = false
-    private var pingTimer = SimpleTimer(queue: .main)
+    private var pingTimer = MainTimer()
     private var pongReceived = true
 
     init(
@@ -322,8 +324,16 @@ class RemoteControlAssistant: NSObject, @unchecked Sendable {
             options.autoReplyPing = true
             parameters.defaultProtocolStack.applicationProtocols.append(options)
             server = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
-            server?.newConnectionHandler = handleNewConnection
-            server?.stateUpdateHandler = handleStateUpdate
+            server?.newConnectionHandler = { webSocket in
+                MainActor.assumeIsolated {
+                    self.handleNewConnection(webSocket: webSocket)
+                }
+            }
+            server?.stateUpdateHandler = { newState in
+                MainActor.assumeIsolated {
+                    self.handleStateUpdate(newState)
+                }
+            }
             server?.start(queue: .main)
         } catch {
             connectionErrorMessage = error.localizedDescription
@@ -423,22 +433,24 @@ class RemoteControlAssistant: NSObject, @unchecked Sendable {
 
     private func receivePacket(webSocket: NWConnection) {
         webSocket.receiveMessage { data, context, _, _ in
-            switch context?.webSocketOperation() {
-            case .text:
-                if let data, !data.isEmpty {
-                    self.handleMessage(webSocket: webSocket, packet: data)
+            MainActor.assumeIsolated {
+                switch context?.webSocketOperation() {
+                case .text:
+                    if let data, !data.isEmpty {
+                        self.handleMessage(webSocket: webSocket, packet: data)
+                        self.receivePacket(webSocket: webSocket)
+                    } else {
+                        self.handleDisconnected(webSocket: webSocket)
+                    }
+                case .ping:
+                    webSocket.sendWebSocket(data: data, opcode: .pong)
                     self.receivePacket(webSocket: webSocket)
-                } else {
+                case .pong:
+                    self.pongReceived = true
+                    self.receivePacket(webSocket: webSocket)
+                default:
                     self.handleDisconnected(webSocket: webSocket)
                 }
-            case .ping:
-                webSocket.sendWebSocket(data: data, opcode: .pong)
-                self.receivePacket(webSocket: webSocket)
-            case .pong:
-                self.pongReceived = true
-                self.receivePacket(webSocket: webSocket)
-            default:
-                self.handleDisconnected(webSocket: webSocket)
             }
         }
     }

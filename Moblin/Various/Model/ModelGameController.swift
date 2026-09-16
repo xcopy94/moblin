@@ -39,7 +39,7 @@ extension Model {
                     moveToGimbalPreset(id: gimbalPresetId)
                 }
             } else if let gimbalPresetId = functionData.gimbalPresetId {
-                let timer = SimpleTimer(queue: .main)
+                let timer = MainTimer()
                 timer.startSingleShot(timeout: 0.5) { [weak self] in
                     self?.gimbalPresetLongPressTimers.removeValue(forKey: buttonId)
                     self?.saveGimbalPreset(id: gimbalPresetId)
@@ -50,9 +50,7 @@ extension Model {
         case .gimbalAnimate:
             if !pressed {
                 if #available(iOS 18.0, *) {
-                    DispatchQueue.main.async {
-                        Gimbal.shared?.animate(motion: functionData.gimbalMotion)
-                    }
+                    Gimbal.shared?.animate(motion: functionData.gimbalMotion)
                 }
             }
         case .torch:
@@ -231,7 +229,7 @@ extension Model {
     }
 
     private func numberOfGameControllers() -> Int {
-        gameControllers.filter { $0 != nil }.count
+        gameControllers.count(where: { $0 != nil })
     }
 
     private func updateGameControllers() {

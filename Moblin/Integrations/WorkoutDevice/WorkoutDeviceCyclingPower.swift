@@ -1,10 +1,10 @@
 import Collections
-@preconcurrency import CoreBluetooth
+import CoreBluetooth
 import Foundation
 
-let workoutDeviceCyclingPowerServiceId = CBUUID(string: "1818")
-let workoutDeviceCyclingPowerMeasurementCharacteristicId = CBUUID(string: "2A63")
-let workoutDeviceCyclingPowerVectorCharacteristicId = CBUUID(string: "2A64")
+nonisolated(unsafe) let workoutDeviceCyclingPowerServiceId = CBUUID(string: "1818")
+nonisolated(unsafe) let workoutDeviceCyclingPowerMeasurementCharacteristicId = CBUUID(string: "2A63")
+nonisolated(unsafe) let workoutDeviceCyclingPowerVectorCharacteristicId = CBUUID(string: "2A64")
 
 private let measurementPedalPowerBalanceFlagIndex = 0
 private let measurementAccumulatedTorqueFlagIndex = 2
@@ -151,6 +151,10 @@ class WorkoutDeviceCyclingPower {
 
     func reset() {
         measurementCharacteristic = nil
+        resetMeasurements()
+    }
+
+    func resetMeasurements() {
         crankCadence.reset()
     }
 
@@ -162,7 +166,7 @@ class WorkoutDeviceCyclingPower {
         measurementCharacteristic != nil
     }
 
-    func handleMeasurement(value: Data) throws -> (Int, Int) {
+    func handleMeasurement(value: Data) throws -> (Int, Int?) {
         let measurement = try PowerMeasurement(value: value)
         averagePower.update(value: Double(measurement.instantaneousPower))
         let cadence = crankCadence.update(revolutions: measurement.cumulativeCrankRevolutions,

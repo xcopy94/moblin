@@ -32,24 +32,20 @@ func fetchYouTubeVideoId(handle: String) async throws -> String {
 private let minimumPollDelayMs = 200
 private let maximumPollDelayMs = 3000
 
-private func createPaidMessageHighlight(chatDescription: ChatDescription) -> ChatHighlight {
-    var amount = ""
-    if let text = chatDescription.purchaseAmountText?.simpleText {
-        amount = ", \(text)"
+private func createPaidMessageText(chatDescription: ChatDescription) -> String {
+    if let amount = chatDescription.purchaseAmountText?.simpleText {
+        String(localized: "sent a \(amount) Super Chat!")
+    } else {
+        String(localized: "sent a Super Chat!")
     }
-    return ChatHighlight.makePaidMessage(amount: amount)
 }
 
-private func createPaidStickerHighlight(chatDescription: ChatDescription) -> ChatHighlight {
-    var amount = ""
-    if let text = chatDescription.purchaseAmountText?.simpleText {
-        amount = ", \(text)"
+private func createPaidStickerText(chatDescription: ChatDescription) -> String {
+    if let amount = chatDescription.purchaseAmountText?.simpleText {
+        String(localized: "sent a \(amount) Super Sticker!")
+    } else {
+        String(localized: "sent a Super Sticker!")
     }
-    return ChatHighlight.makePaidSticker(amount: amount)
-}
-
-private func createMemberHighlight() -> ChatHighlight {
-    ChatHighlight.makeMember()
 }
 
 private struct InvalidationContinuationData: Codable {
@@ -183,7 +179,7 @@ private struct GetLiveChat: Codable {
 }
 
 @MainActor
-final class YouTubeLiveChat: NSObject, @unchecked Sendable {
+final class YouTubeLiveChat: NSObject {
     private var model: Model
     private var videoId: String
     private var task: Task<Void, any Error>?
@@ -240,15 +236,11 @@ final class YouTubeLiveChat: NSObject, @unchecked Sendable {
     }
 
     private func handleError(title: String, subTitle: String) {
-        DispatchQueue.main.async {
-            self.model.makeErrorToast(title: title, subTitle: subTitle)
-        }
+        model.makeErrorToast(title: title, subTitle: subTitle)
     }
 
     private func handleOk(title: String) {
-        DispatchQueue.main.async {
-            self.model.makeToast(title: title)
-        }
+        model.makeToast(title: title)
     }
 
     private func makeLiveChatUrl() -> URL? {
@@ -302,19 +294,21 @@ final class YouTubeLiveChat: NSObject, @unchecked Sendable {
                     if let chatDescription = item.liveChatPaidMessageRenderer {
                         numberOfMessages += handleChatDescription(
                             chatDescription: chatDescription,
-                            highlight: createPaidMessageHighlight(chatDescription: chatDescription)
+                            text: createPaidMessageText(chatDescription: chatDescription),
+                            highlight: ChatHighlight.makePaidMessage()
                         )
                     }
                     if let chatDescription = item.liveChatPaidStickerRenderer {
                         numberOfMessages += handleChatDescription(
                             chatDescription: chatDescription,
-                            highlight: createPaidStickerHighlight(chatDescription: chatDescription)
+                            text: createPaidStickerText(chatDescription: chatDescription),
+                            highlight: ChatHighlight.makePaidSticker()
                         )
                     }
                     if let chatDescription = item.liveChatMembershipItemRenderer {
                         numberOfMessages += handleChatDescription(
                             chatDescription: chatDescription,
-                            highlight: createMemberHighlight()
+                            highlight: ChatHighlight.makeMember()
                         )
                     }
                     if let giftPurchase = item.liveChatSponsorshipsGiftPurchaseAnnouncementRenderer,
@@ -360,10 +354,14 @@ final class YouTubeLiveChat: NSObject, @unchecked Sendable {
     }
 
     private func handleChatDescription(chatDescription: ChatDescription,
+                                       text: String? = nil,
                                        highlight: ChatHighlight?) -> Int
     {
         var id = 0
         var segments: [ChatPostSegment] = []
+        if let text {
+            segments += createSegments(message: text, id: &id)
+        }
         if let headerSubtext = chatDescription.headerSubtext {
             for run in headerSubtext.runs {
                 if let text = run.text {

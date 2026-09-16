@@ -4,12 +4,12 @@ from .suites import dji_camera
 from .suites import gimbal
 from .suites import http_proxy
 from .suites import ingests
+from .suites import macros
 from .suites import mic
 from .suites import record
 from .suites import scenes
 from .suites import stream
 from .suites import talkback
-from .suites import twitch_events
 from .suites import web_remote_control
 from .utils.runner import create_parser
 from .utils.runner import run
@@ -28,8 +28,8 @@ def create_suites(moblin, _):
         dji_camera.tests(moblin),
         gimbal.tests(moblin),
         http_proxy.tests(moblin),
+        macros.tests(moblin),
         web_remote_control.tests(moblin),
-        twitch_events.tests(moblin),
     ]
 
 

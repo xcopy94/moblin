@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 class Tesla: ObservableObject {
     var vehicle: TeslaVehicle?
     var chargeState = CarServer_ChargeState()
@@ -149,7 +150,7 @@ extension Model {
     }
 }
 
-extension Model: @preconcurrency TeslaVehicleDelegate {
+extension Model: TeslaVehicleDelegate {
     func teslaVehicleState(_: TeslaVehicle, state: TeslaVehicleState) {
         switch state {
         case .idle:

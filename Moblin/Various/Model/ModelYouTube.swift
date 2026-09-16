@@ -26,31 +26,43 @@ extension Model {
             guard let configuration else {
                 return
             }
-            let request = OIDAuthorizationRequest(configuration: configuration,
-                                                  clientId: youTubeClientId,
-                                                  clientSecret: nil,
-                                                  scopes: youTubeScopes,
-                                                  redirectURL: youTubeRedirectUri,
-                                                  responseType: OIDResponseTypeCode,
-                                                  additionalParameters: nil)
-            #if targetEnvironment(macCatalyst)
-            guard let userAgent = OIDExternalUserAgentCatalyst(presenting: rootViewController) else {
-                return
+            nonisolated(unsafe) let serviceConfiguration = configuration
+            MainActor.assumeIsolated {
+                self.youTubeSignIn(stream: stream,
+                                   configuration: serviceConfiguration,
+                                   rootViewController: rootViewController)
             }
-            #else
-            guard let userAgent = OIDExternalUserAgentIOS(presenting: rootViewController) else {
-                return
-            }
-            #endif
-            self.youTube.session = OIDAuthState.authState(
-                byPresenting: request,
-                externalUserAgent: userAgent
-            ) { authState, _ in
-                stream.youTubeAuthState = authState
-                stream.youTubeWantsToBeLoggedIn = authState != nil
-                stream.youTubeNotLoggedInCount = 0
-                self.youTube.session = nil
-            }
+        }
+    }
+
+    private func youTubeSignIn(stream: SettingsStream,
+                               configuration: OIDServiceConfiguration,
+                               rootViewController: UIViewController)
+    {
+        let request = OIDAuthorizationRequest(configuration: configuration,
+                                              clientId: youTubeClientId,
+                                              clientSecret: nil,
+                                              scopes: youTubeScopes,
+                                              redirectURL: youTubeRedirectUri,
+                                              responseType: OIDResponseTypeCode,
+                                              additionalParameters: nil)
+        #if targetEnvironment(macCatalyst)
+        guard let userAgent = OIDExternalUserAgentCatalyst(presenting: rootViewController) else {
+            return
+        }
+        #else
+        guard let userAgent = OIDExternalUserAgentIOS(presenting: rootViewController) else {
+            return
+        }
+        #endif
+        youTube.session = OIDAuthState.authState(
+            byPresenting: request,
+            externalUserAgent: userAgent
+        ) { authState, _ in
+            stream.youTubeAuthState = authState
+            stream.youTubeWantsToBeLoggedIn = authState != nil
+            stream.youTubeNotLoggedInCount = 0
+            self.youTube.session = nil
         }
     }
 
@@ -131,7 +143,7 @@ extension Model {
                 }
             }
         } else if !stream.youTubeHandle.isEmpty {
-            Task { @MainActor in
+            Task {
                 if let videoId = try? await fetchYouTubeVideoId(handle: stream.youTubeHandle) {
                     stopFetchingYouTubeChatVideoId()
                     guard videoId != stream.youTubeVideoIds else {
@@ -239,7 +251,7 @@ extension Model {
     }
 }
 
-extension Model: @preconcurrency YouTubeApiDelegate {
+extension Model: YouTubeApiDelegate {
     func youTubeApiUnauthorized() {
         guard stream.isYouTubeAuthorized() else {
             return

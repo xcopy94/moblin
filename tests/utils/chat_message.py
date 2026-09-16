@@ -31,3 +31,11 @@ def gigantified_emote_highlight() -> dict:
 
 def announcement_highlight() -> dict:
     return highlight("other", (52, 199, 89), "horn.blast", "Announcement")
+
+
+def super_sticker_highlight() -> dict:
+    return highlight("other", (52, 199, 89), "doc.plaintext", "Super Sticker")
+
+
+def super_chat_highlight() -> dict:
+    return highlight("other", (255, 149, 0), "message", "Super Chat")
