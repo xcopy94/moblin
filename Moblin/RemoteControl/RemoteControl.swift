@@ -812,13 +812,13 @@ enum RemoteControlStatusGeneralFlame: String, Codable {
 }
 
 enum RemoteControlStatusTopRightAudioLevel: Codable {
-    case muted // not changed to .silent for backwards compatibility with older versions of the streamer
+    case silent
     case unknown
     case value(Float)
 
     func toFloat() -> Float {
         switch self {
-        case .muted:
+        case .silent:
             -.infinity
         case .unknown:
             .infinity // in future releases, move to .nan

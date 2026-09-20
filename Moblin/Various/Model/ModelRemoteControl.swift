@@ -458,7 +458,7 @@ extension Model {
             numberOfAudioChannels: audio.numberOfChannels
         )
         if audio.level.level == -Float.infinity {
-            topRight.audioInfo!.audioLevel = .muted
+            topRight.audioInfo!.audioLevel = .silent
         } else if audio.level.level == .infinity || audio.level.level.isNaN {
             topRight.audioInfo!.audioLevel = .unknown
         } else {
