@@ -149,7 +149,7 @@ private struct SnapshotPermissionsSettingsView: View {
                     } footer: {
                         Text("""
                         Take the snapshot on this device, or fetch it from another device's web remote \
-                        control.
+                        control. By default the app switches dynamically to the remote source when this device is not live.
                         """)
                     }
                     PermissionsSettingsInnerView(permissions: permissions)
