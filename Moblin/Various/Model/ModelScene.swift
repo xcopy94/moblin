@@ -822,6 +822,26 @@ extension Model {
         return devices
     }
 
+    func logActiveCameras(scene: SettingsScene, devices: CaptureDevices) {
+        let mainCameraName: String = if let mainCamera = devices.getSceneDevice()?.device {
+            switch scene.videoSource.cameraPosition {
+            case .backTripleLowEnergy, .backDualLowEnergy, .backWideDualLowEnergy:
+                "\(getCameraPositionName(scene: scene)) -> \(mainCamera.name())"
+            default:
+                mainCamera.name()
+            }
+        } else {
+            "none"
+        }
+
+        let additionalDevices = devices.devices.dropFirst(devices.hasSceneDevice ? 1 : 0)
+        let additionalCameraNames = additionalDevices.map { $0.device.name() }
+        let additionalCameras = additionalCameraNames.isEmpty ? "none" : additionalCameraNames.joined(
+            separator: ", "
+        )
+        logger.info("video-unit: Active cameras: main=\(mainCameraName); additional=\(additionalCameras)")
+    }
+
     func getCameraPreviewDeviceIds(scene: SettingsScene,
                                    sceneDevice: AVCaptureDevice?,
                                    resolver: SceneResolver) -> [UUID]

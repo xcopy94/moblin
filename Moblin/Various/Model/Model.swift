@@ -2994,6 +2994,7 @@ final class Model: NSObject, ObservableObject {
                 for captureDevice in devices.devices {
                     self.restoreCameraControls(device: captureDevice.device)
                 }
+                self.logActiveCameras(scene: scene, devices: devices)
                 self.lastAttachCompletedTime = .now
                 self.relaxedBitrateStartTime = self.lastAttachCompletedTime
                 self.relaxedBitrate = self.database.debug.relaxedBitrate
@@ -3029,8 +3030,9 @@ final class Model: NSObject, ObservableObject {
         externalDisplayStreamPreviewView.isMirrored = false
         zoom.hasZoom = false
         cameraPreviewView.setDevices(ids: [])
+        let devices = getBuiltinCameraDevices(scene: scene, sceneDevice: nil, resolver: resolver)
         media.attachBufferedCamera(
-            devices: getBuiltinCameraDevices(scene: scene, sceneDevice: nil, resolver: resolver),
+            devices: devices,
             builtinDelay: database.debug.builtinAudioAndVideoDelay,
             cameraPreviewLayers: cameraPreviewView.previewLayers,
             attachCameraPreview: false,
@@ -3045,6 +3047,7 @@ final class Model: NSObject, ObservableObject {
             macScreenCapture: sceneNeedsMacScreenCapture(scene: scene, resolver: resolver),
             attachPhotoShoot: photoShootEnabled || database.alwaysAttachPhotoShoot,
             onSuccess: {
+                self.logActiveCameras(scene: scene, devices: devices)
                 self.activatePhotoShoot()
             }
         )
