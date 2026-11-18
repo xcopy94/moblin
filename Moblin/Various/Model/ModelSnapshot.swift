@@ -181,7 +181,10 @@ extension Model {
                                      onComplete: @escaping @MainActor (UIImage?) -> Void)
     {
         guard widget.type == .videoSource,
-              let videoSourceId = getVideoSourceId(cameraId: widget.videoSource.toCameraId())
+              let videoSourceId = getVideoSourceId(
+                  cameraId: widget.videoSource.toCameraId(),
+                  resolveLowEnergyCamera: true
+              )
         else {
             onComplete(nil)
             return

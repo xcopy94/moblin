@@ -906,7 +906,7 @@ extension Model {
         }
     }
 
-    func getVideoSourceId(cameraId: SettingsCameraId) -> UUID? {
+    func getVideoSourceId(cameraId: SettingsCameraId, resolveLowEnergyCamera: Bool = false) -> UUID? {
         switch cameraId {
         case let .rtmp(id: id):
             id
@@ -933,14 +933,34 @@ extension Model {
         case let .external(id: id, name: _):
             getBuiltinCameraId(deviceUniqueId: id)
         case .backDualLowEnergy:
-            nil
+            resolveLowEnergyCamera ? getLowEnergyCameraId(cameraPosition: .backDualLowEnergy) : nil
         case .backTripleLowEnergy:
-            nil
+            resolveLowEnergyCamera ? getLowEnergyCameraId(cameraPosition: .backTripleLowEnergy) : nil
         case .backWideDualLowEnergy:
-            nil
+            resolveLowEnergyCamera ? getLowEnergyCameraId(cameraPosition: .backWideDualLowEnergy) : nil
         case .none:
             noneCameraId
         }
+    }
+
+    func getBuiltinCameraDevice(
+        videoSource: SettingsVideoSource,
+        resolveLowEnergyCamera: Bool = false
+    ) -> AVCaptureDevice? {
+        if let cameraId = videoSource.getCaptureDeviceCameraId() {
+            return AVCaptureDevice(uniqueID: cameraId)
+        }
+        guard resolveLowEnergyCamera else {
+            return nil
+        }
+        return getLowEnergyCameraDevice(cameraPosition: videoSource.cameraPosition)
+    }
+
+    private func getLowEnergyCameraId(cameraPosition: SettingsSceneCameraPosition) -> UUID? {
+        guard let device = getLowEnergyCameraDevice(cameraPosition: cameraPosition) else {
+            return nil
+        }
+        return getBuiltinCameraId(deviceUniqueId: device.uniqueID)
     }
 
     func setExposureBias(bias: Float) {

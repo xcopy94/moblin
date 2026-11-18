@@ -2901,88 +2901,80 @@ final class Model: NSObject, ObservableObject {
     }
 
     func attachBackTripleLowEnergyCamera(force: Bool = true, selectLensForZoom: Bool = false) {
-        attachBackLowEnergyCamera(
-            kind: .triple,
-            bestDeviceType: .builtInTripleCamera,
-            force: force,
-            selectLensForZoom: selectLensForZoom
-        ) { backX, switchOverX in
-            if backX < 1.0 {
-                .ultraWide
-            } else if backX < switchOverX {
-                .wide
-            } else {
-                .telephoto
-            }
-        }
+        attachBackLowEnergyCamera(kind: .triple, force: force, selectLensForZoom: selectLensForZoom)
     }
 
     func attachBackDualLowEnergyCamera(force: Bool = true, selectLensForZoom: Bool = false) {
-        attachBackLowEnergyCamera(
-            kind: .dual,
-            bestDeviceType: .builtInDualCamera,
-            force: force,
-            selectLensForZoom: selectLensForZoom
-        ) { backX, switchOverX in
-            if backX < switchOverX {
-                .wide
-            } else {
-                .telephoto
-            }
-        }
+        attachBackLowEnergyCamera(kind: .dual, force: force, selectLensForZoom: selectLensForZoom)
     }
 
     func attachBackWideDualLowEnergyCamera(force: Bool = true, selectLensForZoom: Bool = false) {
-        attachBackLowEnergyCamera(
-            kind: .wideDual,
-            bestDeviceType: .builtInDualWideCamera,
-            force: force,
-            selectLensForZoom: selectLensForZoom
-        ) { backX, switchOverX in
-            if backX < switchOverX {
-                .ultraWide
-            } else {
-                .wide
-            }
+        attachBackLowEnergyCamera(kind: .wideDual, force: force, selectLensForZoom: selectLensForZoom)
+    }
+
+    func getLowEnergyCameraDevice(cameraPosition: SettingsSceneCameraPosition) -> AVCaptureDevice? {
+        let kind: LowEnergyCameraKind
+        switch cameraPosition {
+        case .backTripleLowEnergy:
+            kind = .triple
+        case .backDualLowEnergy:
+            kind = .dual
+        case .backWideDualLowEnergy:
+            kind = .wideDual
+        default:
+            return nil
         }
+        return getBackLowEnergyCameraDevices(kind: kind)?.lens
     }
 
     private func attachBackLowEnergyCamera(
         kind: LowEnergyCameraKind,
-        bestDeviceType: AVCaptureDevice.DeviceType,
         force: Bool,
-        selectLensForZoom: Bool,
-        getLensForZoom: (Float, Float) -> LowEnergyCameraLens
+        selectLensForZoom: Bool
     ) {
         cameraPosition = .back
         lowEnergyCameraUpdateBackZoom(force: force)
         zoom.level.x = zoom.backX
-        guard let bestDevice = AVCaptureDevice.default(bestDeviceType, for: .video, position: .back),
-              let lastZoomFactor = bestDevice.virtualDeviceSwitchOverVideoZoomFactors.last
-        else {
-            return
-        }
-        let scale = bestDevice.getZoomFactorScale(hasUltraWideCamera: hasUltraWideBackCamera)
-        let switchOverX = (Float(truncating: lastZoomFactor) * scale).rounded()
-        let lens = if selectLensForZoom {
-            getLensForZoom(zoom.backX, switchOverX)
-        } else {
-            lowEnergyCameraSelectedLensByKind[kind] ?? getLensForZoom(zoom.backX, switchOverX)
-        }
-        lowEnergyCameraSelectedLensByKind[kind] = lens
-        guard let device = AVCaptureDevice.default(lens.deviceType, for: .video, position: .back),
+        guard let devices = getBackLowEnergyCameraDevices(kind: kind, selectLensForZoom: selectLensForZoom),
               let scene = getSelectedScene()
         else {
             return
         }
+        let device = devices.lens
         if !force, device == cameraDevice {
             return
         }
         cameraDevice = device
         cameraZoomLevelToXScale = device.getZoomFactorScale(hasUltraWideCamera: hasUltraWideBackCamera)
-        (cameraZoomXMinimum, cameraZoomXMaximum) = bestDevice
+        (cameraZoomXMinimum, cameraZoomXMaximum) = devices.virtual
             .getUIZoomRange(hasUltraWideCamera: hasUltraWideBackCamera)
         attachCameraFinalize(scene: scene, resolver: makeSceneResolver())
+    }
+
+    private func getBackLowEnergyCameraDevices(
+        kind: LowEnergyCameraKind,
+        selectLensForZoom: Bool = false
+    ) -> (virtual: AVCaptureDevice, lens: AVCaptureDevice)? {
+        guard let virtual = AVCaptureDevice.default(kind.virtualDeviceType, for: .video, position: .back),
+              let lastZoomFactor = virtual.virtualDeviceSwitchOverVideoZoomFactors.last
+        else {
+            return nil
+        }
+        let scale = virtual.getZoomFactorScale(hasUltraWideCamera: hasUltraWideBackCamera)
+        let switchOverX = (Float(truncating: lastZoomFactor) * scale).rounded()
+        let lens = if selectLensForZoom {
+            kind.lensForZoom(backX: zoom.backX, switchOverX: switchOverX)
+        } else {
+            lowEnergyCameraSelectedLensByKind[kind] ?? kind.lensForZoom(
+                backX: zoom.backX,
+                switchOverX: switchOverX
+            )
+        }
+        lowEnergyCameraSelectedLensByKind[kind] = lens
+        guard let lensDevice = AVCaptureDevice.default(lens.deviceType, for: .video, position: .back) else {
+            return nil
+        }
+        return (virtual, lensDevice)
     }
 
     func attachCamera(scene: SettingsScene, position: AVCaptureDevice.Position, resolver: SceneResolver) {

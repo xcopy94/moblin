@@ -8,9 +8,45 @@ enum LowEnergyCameraKind: Hashable {
     case triple
     case dual
     case wideDual
+
+    var virtualDeviceType: AVCaptureDevice.DeviceType {
+        switch self {
+        case .triple:
+            .builtInTripleCamera
+        case .dual:
+            .builtInDualCamera
+        case .wideDual:
+            .builtInDualWideCamera
+        }
+    }
+
+    func lensForZoom(backX: Float, switchOverX: Float) -> LowEnergyCameraLens {
+        switch self {
+        case .triple:
+            if backX < 1.0 {
+                .ultraWide
+            } else if backX < switchOverX {
+                .wide
+            } else {
+                .telephoto
+            }
+        case .dual:
+            if backX < switchOverX {
+                .wide
+            } else {
+                .telephoto
+            }
+        case .wideDual:
+            if backX < switchOverX {
+                .ultraWide
+            } else {
+                .wide
+            }
+        }
+    }
 }
 
-enum LowEnergyCameraLens {
+enum LowEnergyCameraLens: Equatable {
     case ultraWide
     case wide
     case telephoto

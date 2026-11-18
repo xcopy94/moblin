@@ -814,7 +814,11 @@ extension Model {
         }
         if let quickSwitchGroup = scene.quickSwitchGroup {
             for otherScene in enabledScenes where otherScene.quickSwitchGroup == quickSwitchGroup {
-                getBuiltinCameraDevices(videoSource: otherScene.videoSource, devices: &devices.devices)
+                getBuiltinCameraDevices(
+                    videoSource: otherScene.videoSource,
+                    devices: &devices.devices,
+                    resolveLowEnergyCamera: true
+                )
                 getBuiltinCameraDevicesInScene(
                     scene: otherScene,
                     devices: &devices.devices,
@@ -836,7 +840,11 @@ extension Model {
         }
         for otherScene in getQuickSwitchScenes(scene: scene, resolver: resolver) {
             var devices: [CaptureDevice] = []
-            getBuiltinCameraDevices(videoSource: otherScene.videoSource, devices: &devices)
+            getBuiltinCameraDevices(
+                videoSource: otherScene.videoSource,
+                devices: &devices,
+                resolveLowEnergyCamera: true
+            )
             deviceIds.formUnion(devices.map(\.id))
             deviceIds.formUnion(getCameraPreviewWidgets(resolvedScene: resolver.resolve(otherScene))
                 .map(\.deviceId))
@@ -858,7 +866,11 @@ extension Model {
 
     private func getSceneBuiltinCameraDeviceIds(scene: SettingsScene, resolver: SceneResolver) -> Set<UUID> {
         var devices: [CaptureDevice] = []
-        getBuiltinCameraDevices(videoSource: scene.videoSource, devices: &devices)
+        getBuiltinCameraDevices(
+            videoSource: scene.videoSource,
+            devices: &devices,
+            resolveLowEnergyCamera: true
+        )
         getBuiltinCameraDevicesInScene(scene: scene, devices: &devices, resolver: resolver)
         return Set(devices.map(\.id))
     }
@@ -867,9 +879,10 @@ extension Model {
         var widgets: [CameraPreviewWidget] = []
         for widget in resolvedScene.localDrawnWidgets() where widget.widget.type == .videoSource {
             let videoSource = widget.widget.videoSource
-            guard let cameraId = videoSource.videoSource.getCaptureDeviceCameraId(),
-                  let device = AVCaptureDevice(uniqueID: cameraId)
-            else {
+            guard let device = getBuiltinCameraDevice(
+                videoSource: videoSource.videoSource,
+                resolveLowEnergyCamera: true
+            ) else {
                 continue
             }
             var previewWidget = CameraPreviewWidget(
@@ -1598,7 +1611,10 @@ extension Model {
         guard let effect = videoSourceEffects[widget.id], !effects.contains(effect) else {
             return
         }
-        if let videoSourceId = getVideoSourceId(cameraId: widget.videoSource.toCameraId()) {
+        if let videoSourceId = getVideoSourceId(
+            cameraId: widget.videoSource.toCameraId(),
+            resolveLowEnergyCamera: true
+        ) {
             effect.setVideoSourceId(videoSourceId: videoSourceId)
         }
         effect.setSceneWidget(sceneWidget: sceneWidget.clone())
@@ -1639,7 +1655,10 @@ extension Model {
         guard let effect = vTuberEffects[widget.id], !effects.contains(effect) else {
             return
         }
-        if let videoSourceId = getVideoSourceId(cameraId: widget.vTuber.toCameraId()) {
+        if let videoSourceId = getVideoSourceId(
+            cameraId: widget.vTuber.toCameraId(),
+            resolveLowEnergyCamera: true
+        ) {
             effect.setVideoSourceId(videoSourceId: videoSourceId)
         }
         effect.setSceneWidget(sceneWidget: sceneWidget.clone())
@@ -1661,7 +1680,10 @@ extension Model {
         guard let effect = pngTuberEffects[widget.id], !effects.contains(effect) else {
             return
         }
-        if let videoSourceId = getVideoSourceId(cameraId: widget.pngTuber.toCameraId()) {
+        if let videoSourceId = getVideoSourceId(
+            cameraId: widget.pngTuber.toCameraId(),
+            resolveLowEnergyCamera: true
+        ) {
             effect.setVideoSourceId(videoSourceId: videoSourceId)
         }
         effect.setSceneWidget(sceneWidget: sceneWidget.clone())
@@ -1851,20 +1873,38 @@ extension Model {
             let widget = drawnWidget.widget
             switch widget.type {
             case .videoSource:
-                getBuiltinCameraDevices(videoSource: widget.videoSource.videoSource, devices: &devices)
+                getBuiltinCameraDevices(
+                    videoSource: widget.videoSource.videoSource,
+                    devices: &devices,
+                    resolveLowEnergyCamera: true
+                )
             case .vTuber:
-                getBuiltinCameraDevices(videoSource: widget.vTuber.videoSource, devices: &devices)
+                getBuiltinCameraDevices(
+                    videoSource: widget.vTuber.videoSource,
+                    devices: &devices,
+                    resolveLowEnergyCamera: true
+                )
             case .pngTuber:
-                getBuiltinCameraDevices(videoSource: widget.pngTuber.videoSource, devices: &devices)
+                getBuiltinCameraDevices(
+                    videoSource: widget.pngTuber.videoSource,
+                    devices: &devices,
+                    resolveLowEnergyCamera: true
+                )
             default:
                 break
             }
         }
     }
 
-    private func getBuiltinCameraDevices(videoSource: SettingsVideoSource, devices: inout [CaptureDevice]) {
-        if let cameraId = videoSource.getCaptureDeviceCameraId(),
-           let device = AVCaptureDevice(uniqueID: cameraId),
+    private func getBuiltinCameraDevices(
+        videoSource: SettingsVideoSource,
+        devices: inout [CaptureDevice],
+        resolveLowEnergyCamera: Bool = false
+    ) {
+        if let device = getBuiltinCameraDevice(
+               videoSource: videoSource,
+               resolveLowEnergyCamera: resolveLowEnergyCamera
+           ),
            !devices.contains(where: { $0.device == device })
         {
             devices.append(makeCaptureDevice(device: device))
